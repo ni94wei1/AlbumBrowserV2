@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>相册管理工具 2.0</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- 登录界面 -->
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <h2><i class="fas fa-camera"></i> 相册管理工具</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">用户名</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">密码</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-sign-in-alt"></i> 登录
+                </button>
+            </form>
+            <div id="loginError" class="error-message"></div>
+        </div>
+    </div>
+
+    <!-- 主界面 -->
+    <div id="mainApp" class="hidden">
+        <!-- 顶部导航栏 -->
+        <header class="header">
+            <div class="header-left">
+                <h1><i class="fas fa-camera"></i> 相册管理工具</h1>
+            </div>
+            <div class="header-center">
+                <select id="directorySelect" class="directory-select">
+                    <option value="">选择目录...</option>
+                </select>
+            </div>
+            <div class="header-right">
+                <span id="userInfo" class="user-info"></span>
+                <button id="logoutBtn" class="btn btn-secondary">
+                    <i class="fas fa-sign-out-alt"></i> 退出
+                </button>
+            </div>
+        </header>
+
+        <!-- 工具栏 -->
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <div class="sort-controls">
+                    <label>排序:</label>
+                    <select id="sortBy">
+                        <option value="name">名称</option>
+                        <option value="date">拍摄时间</option>
+                        <option value="modified">修改时间</option>
+                        <option value="rating">星级</option>
+                    </select>
+                    <select id="sortOrder">
+                        <option value="asc">升序</option>
+                        <option value="desc">降序</option>
+                    </select>
+                </div>
+            </div>
+            <div class="toolbar-right">
+                <div class="view-controls">
+                    <button id="gridViewBtn" class="btn btn-icon active" title="网格视图">
+                        <i class="fas fa-th"></i>
+                    </button>
+                    <button id="listViewBtn" class="btn btn-icon" title="列表视图">
+                        <i class="fas fa-list"></i>
+                    </button>
+                </div>
+                <div class="thumbnail-size">
+                    <label>缩略图大小:</label>
+                    <input type="range" id="thumbnailSize" min="100" max="300" value="200">
+                </div>
+            </div>
+        </div>
+
+        <!-- 图片网格 -->
+        <div id="imageGrid" class="image-grid">
+            <div id="loadingSpinner" class="loading-spinner">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>加载中...</p>
+            </div>
+        </div>
+
+        <!-- 分页控件 -->
+        <div id="pagination" class="pagination">
+            <button id="prevPage" class="btn btn-secondary">
+                <i class="fas fa-chevron-left"></i> 上一页
+            </button>
+            <span id="pageInfo" class="page-info"></span>
+            <button id="nextPage" class="btn btn-secondary">
+                下一页 <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- 图片查看器 -->
+    <div id="imageViewer" class="image-viewer hidden">
+        <div class="viewer-header">
+            <div class="viewer-title">
+                <span id="viewerImageName"></span>
+                <span id="viewerImageIndex"></span>
+            </div>
+            <button id="closeViewer" class="btn btn-icon">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="viewer-content">
+            <div class="viewer-main">
+                <button id="prevImage" class="nav-btn nav-prev">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                
+                <div class="image-container">
+                    <img id="viewerImage" src="" alt="">
+                    <div class="zoom-controls">
+                        <button id="zoomOut" class="btn btn-icon">
+                            <i class="fas fa-search-minus"></i>
+                        </button>
+                        <span id="zoomLevel">100%</span>
+                        <button id="zoomIn" class="btn btn-icon">
+                            <i class="fas fa-search-plus"></i>
+                        </button>
+                        <button id="resetZoom" class="btn btn-icon">
+                            <i class="fas fa-expand-arrows-alt"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <button id="nextImage" class="nav-btn nav-next">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+            
+            <div class="viewer-sidebar">
+                <div class="metadata-panel">
+                    <h3>图片信息</h3>
+                    <div id="imageMetadata" class="metadata-content">
+                        <!-- 元数据将在这里动态加载 -->
+                    </div>
+                    
+                    <div class="rating-section">
+                        <h4>星级评分</h4>
+                        <div id="starRating" class="star-rating">
+                            <i class="fas fa-star" data-rating="1"></i>
+                            <i class="fas fa-star" data-rating="2"></i>
+                            <i class="fas fa-star" data-rating="3"></i>
+                            <i class="fas fa-star" data-rating="4"></i>
+                            <i class="fas fa-star" data-rating="5"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="action-buttons">
+                        <button id="downloadOriginal" class="btn btn-primary">
+                            <i class="fas fa-download"></i> 下载原图
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 管理员面板 -->
+    <div id="adminPanel" class="admin-panel hidden">
+        <div class="panel-content">
+            <h3>管理员面板</h3>
+            <div class="admin-section">
+                <h4>添加图片目录</h4>
+                <form id="addDirectoryForm">
+                    <input type="text" id="newDirectory" placeholder="输入目录路径" required>
+                    <button type="submit" class="btn btn-primary">添加</button>
+                </form>
+            </div>
+            <div class="admin-section">
+                <h4>添加用户</h4>
+                <form id="addUserForm">
+                    <input type="text" id="newUsername" placeholder="用户名" required>
+                    <input type="password" id="newPassword" placeholder="密码" required>
+                    <input type="text" id="userDirectories" placeholder="可访问目录(用逗号分隔)">
+                    <button type="submit" class="btn btn-primary">添加用户</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
