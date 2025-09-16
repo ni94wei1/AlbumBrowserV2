@@ -407,21 +407,41 @@ class ImageProcessor:
         file_hash = self.get_file_hash(file_path)
         metadata_path = os.path.join(cache_dir, f"meta_{file_hash}.json")
         
+        # 强制打印调试信息到stderr，确保能被看到
+        import sys
+        print("\n========== extract_metadata 被调用 ==========", file=sys.stderr)
+        print(f"文件路径: {file_path}", file=sys.stderr)
+        print(f"缓存文件路径: {metadata_path}", file=sys.stderr)
+        print(f"缓存文件存在: {os.path.exists(metadata_path)}", file=sys.stderr)
+        
         if os.path.exists(metadata_path):
             try:
                 with open(metadata_path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    cached_metadata = json.load(f)
+                    print(f"从缓存读取到的rating: {cached_metadata.get('rating', 'Not found')}", file=sys.stderr)
+                    return cached_metadata
             except Exception as e:
-                print(f"加载缓存的元数据失败 {file_path}: {e}")
+                print(f"加载缓存的元数据失败 {file_path}: {e}", file=sys.stderr)
+        
+        # 打印WIN32_AVAILABLE状态
+        print(f"WIN32_AVAILABLE: {WIN32_AVAILABLE}", file=sys.stderr)
+        
+        # 直接测试get_windows_rating方法
+        print("调用get_windows_rating...", file=sys.stderr)
+        rating_value = self.get_windows_rating(file_path)
+        print(f"get_windows_rating返回值: {rating_value}", file=sys.stderr)
         
         metadata = {
             'filename': os.path.basename(file_path),
             'file_size': os.path.getsize(file_path),
             'modified_time': os.path.getmtime(file_path),
-            'rating': self.get_windows_rating(file_path),
+            'rating': rating_value,
             'exif': {},
             'is_raw': self.is_raw_format(file_path)
         }
+        
+        print(f"构造的metadata中的rating: {metadata['rating']}", file=sys.stderr)
+        print("===========================================", file=sys.stderr)
         
         try:
             # 提取EXIF信息
