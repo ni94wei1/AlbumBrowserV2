@@ -288,7 +288,7 @@ body {
 .folder-preview {
     position: relative;
     width: 100%;
-    height: 180px; /* 固定高度，与JavaScript计算一致 */
+    height: 220px; /* 增加预览区域高度，显示更多图片内容 */
     background: #f8f9fa;
     display: flex;
     align-items: center;

@@ -478,8 +478,8 @@ function positionItem(element, img) {
         itemHeight = imageHeight + infoHeight;
     } else if (element.classList.contains('folder-item')) {
         // 计算文件夹项目的实际高度
-        const previewHeight = 180; // 预览区域固定高度
-        const infoHeight = 100; // 信息区域固定高度
+        const previewHeight = 220; // 增加预览区域高度，显示更多图片内容
+        const infoHeight = 60; // 减少信息区域高度，减少空白
         itemHeight = previewHeight + infoHeight;
     } else {
         // 其他项目的默认高度
