@@ -60,7 +60,7 @@ class ImageProcessor:
             return None
     
     def generate_thumbnail(self, file_path: str) -> Optional[str]:
-        """生成缩略图（保持原比例，最大尺寸256）"""
+        """生成缩略图（保持原比例，最大尺寸480）"""
         cache_dir = self.get_cache_dir(file_path)
         file_hash = self.get_file_hash(file_path)
         thumbnail_path = os.path.join(cache_dir, f"thumb_{file_hash}.jpg")
@@ -73,8 +73,8 @@ class ImageProcessor:
             if not image:
                 return None
             
-            # 保持原比例，最大尺寸256
-            max_size = 256
+            # 保持原比例，最大尺寸480
+            max_size = 480
             
             # 按比例缩放，最大边不超过指定尺寸
             image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
@@ -187,15 +187,35 @@ class ImageProcessor:
         
         return metadata
     
-    def clean_old_cache(self):
-        """清理项目目录下的旧缓存文件"""
-        project_cache_dir = 'cache'
-        if os.path.exists(project_cache_dir):
-            try:
-                shutil.rmtree(project_cache_dir)
-                print(f"已删除旧缓存目录: {project_cache_dir}")
-            except Exception as e:
-                print(f"删除旧缓存目录失败: {e}")
+    def clean_all_thumbnails(self):
+        """清理所有图片目录下的缩略图缓存文件"""
+        try:
+            # 获取所有配置的图片目录
+            image_dirs = self.config.config.get('image_directories', [])
+            
+            for image_dir in image_dirs:
+                if not os.path.exists(image_dir):
+                    continue
+                
+                # 遍历目录查找所有.album_cache文件夹
+                for root, dirs, files in os.walk(image_dir):
+                    if '.album_cache' in dirs:
+                        cache_dir = os.path.join(root, '.album_cache')
+                        
+                        # 删除所有thumb_开头的缩略图文件
+                        if os.path.exists(cache_dir):
+                            for file in os.listdir(cache_dir):
+                                if file.startswith('thumb_'):
+                                    file_path = os.path.join(cache_dir, file)
+                                    try:
+                                        os.remove(file_path)
+                                        print(f"已删除旧缩略图: {file_path}")
+                                    except Exception as e:
+                                        print(f"删除缩略图失败 {file_path}: {e}")
+            
+            print("所有旧缩略图缓存已清理完成")
+        except Exception as e:
+            print(f"清理缓存时发生错误: {e}")
     
     def clean_all_cache(self):
         """清理所有图片目录下的缓存文件"""

@@ -497,12 +497,13 @@ body {
 }
 
 .image-container {
-    position: relative;
     max-width: 100%;
     max-height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow: visible;
+    position: relative;
 }
 
 .image-container img {
@@ -510,6 +511,10 @@ body {
     max-height: 100vh;
     object-fit: contain;
     transition: transform 0.3s ease;
+    cursor: move;
+    user-select: none;
+    -webkit-user-drag: none;
+    transform-origin: center center;
 }
 
 .zoom-controls {

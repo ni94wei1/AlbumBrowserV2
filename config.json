@@ -4,6 +4,11 @@
       "password": "pbkdf2:sha256:600000$lJ3N8zV0ovc0hE7b$a639269bcd09df41bfcc41f48e27769d4a852755132d82695fdcbff4c38d053e",
       "role": "admin",
       "accessible_dirs": []
+    },
+    "temp_admin": {
+      "password": "pbkdf2:sha256:600000$E0amF8ud6Nbuev2m$1b7d422b5221f8b76ae68e9959389a4a6015e2ea0eb27b32828581c99cd60b90",
+      "role": "admin",
+      "accessible_dirs": []
     }
   },
   "image_directories": [

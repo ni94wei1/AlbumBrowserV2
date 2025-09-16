@@ -85,13 +85,28 @@ function bindEvents() {
     
     // 图片查看器
     document.getElementById('closeViewer').addEventListener('click', closeImageViewer);
-    document.getElementById('prevImage').addEventListener('click', () => navigateImage(-1));
-    document.getElementById('nextImage').addEventListener('click', () => navigateImage(1));
+    document.getElementById('prevImage').addEventListener('click', (e) => {
+        e.stopPropagation();
+        navigateImage(-1);
+    });
+    document.getElementById('nextImage').addEventListener('click', (e) => {
+        e.stopPropagation();
+        navigateImage(1);
+    });
     
     // 缩放控件
-    document.getElementById('zoomIn').addEventListener('click', () => zoomImage(1.2));
-    document.getElementById('zoomOut').addEventListener('click', () => zoomImage(0.8));
-    document.getElementById('resetZoom').addEventListener('click', resetZoom);
+    document.getElementById('zoomIn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        zoomImage(1.2);
+    });
+    document.getElementById('zoomOut').addEventListener('click', (e) => {
+        e.stopPropagation();
+        zoomImage(0.8);
+    });
+    document.getElementById('resetZoom').addEventListener('click', (e) => {
+        e.stopPropagation();
+        resetZoom();
+    });
     
     // 星级评分
     const stars = document.querySelectorAll('#starRating i');
@@ -110,6 +125,17 @@ function bindEvents() {
     
     // 图片查看器点击事件
     document.getElementById('viewerImage').addEventListener('click', handleImageClick);
+    
+    // 点击viewer-main任意位置关闭页面
+    document.querySelector('.viewer-main').addEventListener('click', closeImageViewer);
+    
+    // 阻止图片容器内的点击事件冒泡
+    document.querySelector('.image-container').addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+    
+    // 添加图片拖动功能
+    addImageDragFunctionality();
 }
 
 async function handleLogin(e) {
@@ -739,19 +765,111 @@ function zoomImage(factor) {
     currentZoom = Math.max(0.1, Math.min(5, currentZoom));
     
     const viewerImage = document.getElementById('viewerImage');
-    viewerImage.style.transform = `scale(${currentZoom})`;
+    viewerImage.style.transform = `scale(${currentZoom}) translate(${translateX}px, ${translateY}px)`;
     
     document.getElementById('zoomLevel').textContent = `${Math.round(currentZoom * 100)}%`;
 }
 
+// 拖动相关变量
+let isDragging = false;
+let startX, startY;
+let translateX = 0, translateY = 0;
+let startTranslateX, startTranslateY;
+
 function resetZoom() {
     currentZoom = 1;
+    translateX = 0;
+    translateY = 0;
     const viewerImage = document.getElementById('viewerImage');
     viewerImage.style.transform = 'scale(1)';
     document.getElementById('zoomLevel').textContent = '100%';
 }
 
+function addImageDragFunctionality() {
+    const viewerImage = document.getElementById('viewerImage');
+    const imageContainer = document.querySelector('.image-container');
+    
+    // 鼠标按下事件
+    viewerImage.addEventListener('mousedown', startDrag);
+    
+    // 鼠标移动事件
+    imageContainer.addEventListener('mousemove', drag);
+    
+    // 鼠标释放事件
+    document.addEventListener('mouseup', stopDrag);
+    
+    // 鼠标离开容器事件
+    imageContainer.addEventListener('mouseleave', stopDrag);
+    
+    // 触摸事件 - 支持手机模式
+    viewerImage.addEventListener('touchstart', startDrag);
+    viewerImage.addEventListener('touchmove', drag);
+    document.addEventListener('touchend', stopDrag);
+}
+
+function startDrag(e) {
+    // 只有在图片被放大后才能拖动
+    if (currentZoom <= 1) return;
+    
+    isDragging = true;
+    
+    // 处理鼠标事件和触摸事件
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    // 记录初始位置
+    startX = clientX;
+    startY = clientY;
+    startTranslateX = translateX;
+    startTranslateY = translateY;
+    
+    // 防止默认行为
+    e.preventDefault();
+    
+    // 改变鼠标样式
+    document.body.style.cursor = 'grabbing';
+}
+
+function drag(e) {
+    if (!isDragging) return;
+    
+    // 处理鼠标事件和触摸事件
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    // 计算移动距离
+    const dx = clientX - startX;
+    const dy = clientY - startY;
+    
+    // 更新平移量
+    translateX = startTranslateX + dx;
+    translateY = startTranslateY + dy;
+    
+    // 应用变换
+    const viewerImage = document.getElementById('viewerImage');
+    viewerImage.style.transform = `scale(${currentZoom}) translate(${translateX}px, ${translateY}px)`;
+    
+    // 触摸事件时阻止默认行为
+    if (e.touches) {
+        e.preventDefault();
+    }
+}
+
+function stopDrag() {
+    if (!isDragging) return;
+    
+    isDragging = false;
+    
+    // 恢复鼠标样式
+    document.body.style.cursor = '';
+}
+
 function handleImageClick(e) {
+    // 如果图片被放大，只允许拖动，不执行其他点击操作
+    if (currentZoom > 1) {
+        return;
+    }
+    
     const rect = e.target.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const clickX = e.clientX;

@@ -75,7 +75,7 @@ if len(sys.argv) > 1 and sys.argv[1] == '--rebuild-cache':
     sys.exit(0)
 
 # 只在首次启动时清理旧的cache目录
-image_processor.clean_old_cache()
+image_processor.clean_all_cache()
 
 def login_required(f):
     """登录验证装饰器"""
@@ -408,6 +408,22 @@ def add_user():
     
     config.add_user(new_username, password, accessible_dirs)
     return jsonify({'success': True})
+
+@app.route('/api/admin/clean_thumbnails', methods=['POST'])
+@login_required
+def clean_thumbnails():
+    """清理所有缩略图（管理员功能）"""
+    username = session['username']
+    user_info = config.config['users'][username]
+    
+    if user_info['role'] != 'admin':
+        return jsonify({'error': '需要管理员权限'}), 403
+    
+    try:
+        image_processor.clean_all_thumbnails()
+        return jsonify({'success': True, 'message': '所有缩略图已清理完成'})
+    except Exception as e:
+        return jsonify({'error': f'清理缩略图失败: {str(e)}'}), 500
 
 if __name__ == '__main__':
     # 创建模板目录
