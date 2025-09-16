@@ -268,9 +268,11 @@ async function loadImages() {
 function displayContent(subdirectories, images) {
     imageGrid.innerHTML = '';
     
-    // 显示子文件夹
+    // 显示子文件夹 - 过滤掉完全空的文件夹
     if (subdirectories && Array.isArray(subdirectories)) {
-        subdirectories.forEach(subdir => {
+        // 显示当前目录有图片的文件夹，或者有预览图片（来自子目录）的文件夹
+        const nonEmptyDirectories = subdirectories.filter(subdir => subdir.image_count > 0 || subdir.preview_image);
+        nonEmptyDirectories.forEach(subdir => {
             const folderItem = createFolderItem(subdir);
             imageGrid.appendChild(folderItem);
         });
@@ -303,11 +305,11 @@ function createFolderItem(subdir) {
     const folderItem = document.createElement('div');
     folderItem.className = 'folder-item';
     folderItem.onclick = () => navigateToSubdirectory(subdir.path);
-    
+
     // 创建预览图片容器
     const previewContainer = document.createElement('div');
     previewContainer.className = 'folder-preview';
-    
+
     if (subdir.preview_image) {
         // 如果有预览图片，显示图片
         const previewImg = document.createElement('img');
@@ -321,31 +323,26 @@ function createFolderItem(subdir) {
         previewContainer.className += ' folder-preview-empty';
         previewContainer.innerHTML = '<div class="folder-empty-text">空文件夹</div>';
     }
-    
+
     // 创建文件夹图标（放在角落）
     const folderIcon = document.createElement('div');
     folderIcon.className = 'folder-corner-icon';
     folderIcon.innerHTML = '📁';
-    
-    // 创建信息区域
-    const folderInfo = document.createElement('div');
-    folderInfo.className = 'folder-info-container';
-    
+    previewContainer.appendChild(folderIcon);
+
+    // 创建文件夹名称和图片数量，直接放在previewContainer上
     const folderName = document.createElement('div');
     folderName.className = 'folder-name';
     folderName.textContent = subdir.name;
-    
+
     const folderCount = document.createElement('div');
     folderCount.className = 'folder-info';
     folderCount.textContent = `${subdir.image_count || 0} 张图片`;
-    
-    folderInfo.appendChild(folderName);
-    folderInfo.appendChild(folderCount);
-    
+
     folderItem.appendChild(previewContainer);
-    folderItem.appendChild(folderIcon);
-    folderItem.appendChild(folderInfo);
-    
+    folderItem.appendChild(folderName);
+    folderItem.appendChild(folderCount);
+
     return folderItem;
 }
 

@@ -14,8 +14,6 @@ from functools import wraps
 
 app = Flask(__name__)
 import os
-# 使用随机生成的密钥
-app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = False  # 开发环境设为False，生产环境应设为True
@@ -34,6 +32,10 @@ def parse_args():
 # 初始化配置和图片处理器
 config = Config()
 image_processor = ImageProcessor(config)
+
+# 使用固定的密钥，确保重启后session不会失效
+# 优先从环境变量读取，否则使用配置文件中的值，最后才生成随机密钥
+app.secret_key = os.environ.get('SECRET_KEY', config.config.get('server', {}).get('secret_key', os.urandom(24).hex()))
 
 # 配置session
 session_config = config.config.get('session', {})
@@ -74,8 +76,15 @@ if len(sys.argv) > 1 and sys.argv[1] == '--rebuild-cache':
     
     sys.exit(0)
 
-# 只在首次启动时清理旧的cache目录
-image_processor.clean_all_cache()
+# 不再每次重启都清理缓存，只在明确需要时（如配置变更）才清理
+# image_processor.clean_all_cache()
+
+# 可选：只在配置发生变更时清理缓存
+# config_changes = config.check_config_changes()
+# if config_changes['thumbnail_changed'] or config_changes['preview_changed']:
+#     print("检测到配置变更，正在清理缓存...")
+#     image_processor.clean_all_cache()
+#     print("缓存清理完成！")
 
 def login_required(f):
     """登录验证装饰器"""
@@ -189,6 +198,10 @@ def browse_directory():
                 folder_images = image_processor.scan_current_directory(item_path)
                 image_count = len(folder_images)
                 preview_image = folder_images[0] if folder_images else None
+                
+                # 如果当前目录没有图片，递归查找子目录中的图片作为预览图
+                if not preview_image:
+                    preview_image = image_processor.find_preview_image_in_subdirectories(item_path)
                 
                 subdirectories.append({
                     'name': item,
