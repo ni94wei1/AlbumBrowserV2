@@ -2,17 +2,30 @@ from flask import Flask, request, jsonify, send_file, render_template, session
 from flask_cors import CORS
 import os
 import json
+from datetime import timedelta
 from config import Config
 from image_processor import ImageProcessor
 from functools import wraps
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # 在生产环境中应该使用更安全的密钥
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 CORS(app)
 
 # 初始化配置和图片处理器
 config = Config()
 image_processor = ImageProcessor(config)
+
+# 配置session
+session_config = config.config.get('session', {})
+app.permanent_session_lifetime = timedelta(seconds=session_config.get('permanent_session_lifetime', 86400))
+
+# 只在首次启动时清理旧的cache目录
+image_processor.clean_old_cache()
+
+# 注释掉自动清理所有缓存的功能，避免每次重启都删除缓存
+# image_processor.clean_all_cache()
 
 def login_required(f):
     """登录验证装饰器"""
@@ -36,6 +49,7 @@ def login():
     password = data.get('password')
     
     if config.verify_user(username, password):
+        session.permanent = True  # 必须在设置session数据之前设置
         session['username'] = username
         user_info = config.config['users'][username]
         return jsonify({
@@ -54,6 +68,22 @@ def logout():
     session.pop('username', None)
     return jsonify({'success': True})
 
+@app.route('/api/auth/status')
+def auth_status():
+    """检查登录状态"""
+    if 'username' in session:
+        username = session['username']
+        user_info = config.config['users'].get(username)
+        if user_info:
+            return jsonify({
+                'authenticated': True,
+                'user': {
+                    'username': username,
+                    'role': user_info['role']
+                }
+            })
+    return jsonify({'authenticated': False}), 401
+
 @app.route('/api/directories')
 @login_required
 def get_directories():
@@ -71,10 +101,10 @@ def get_directories():
     
     return jsonify(directories)
 
-@app.route('/api/images')
+@app.route('/api/browse')
 @login_required
-def get_images():
-    """获取指定目录的图片列表"""
+def browse_directory():
+    """浏览目录，获取子文件夹和图片列表"""
     directory = request.args.get('directory')
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
@@ -84,14 +114,37 @@ def get_images():
     username = session['username']
     accessible_dirs = config.get_user_accessible_dirs(username)
     
-    if directory not in accessible_dirs:
+    # 检查是否有权限访问此目录
+    has_permission = False
+    for accessible_dir in accessible_dirs:
+        if directory.startswith(accessible_dir):
+            has_permission = True
+            break
+    
+    if not has_permission:
         return jsonify({'error': '无权访问此目录'}), 403
     
     if not os.path.exists(directory):
         return jsonify({'error': '目录不存在'}), 404
     
-    # 扫描目录获取图片
-    images = image_processor.scan_directory(directory)
+    # 获取子文件夹
+    subdirectories = []
+    try:
+        for item in os.listdir(directory):
+            if item.startswith('.'):  # 跳过隐藏文件夹
+                continue
+            item_path = os.path.join(directory, item)
+            if os.path.isdir(item_path):
+                subdirectories.append({
+                    'name': item,
+                    'path': item_path,
+                    'type': 'directory'
+                })
+    except PermissionError:
+        pass
+    
+    # 扫描当前目录获取图片（不递归）
+    images = image_processor.scan_current_directory(directory)
     
     # 排序
     if sort_by == 'name':
@@ -110,12 +163,20 @@ def get_images():
     paginated_images = images[start:end]
     
     return jsonify({
+        'subdirectories': subdirectories,
         'images': paginated_images,
         'total': total,
         'page': page,
         'per_page': per_page,
-        'total_pages': (total + per_page - 1) // per_page
+        'total_pages': (total + per_page - 1) // per_page,
+        'current_directory': directory
     })
+
+@app.route('/api/images')
+@login_required
+def get_images():
+    """获取指定目录的图片列表（保持向后兼容）"""
+    return browse_directory()
 
 @app.route('/api/image/thumbnail')
 def get_thumbnail():
@@ -236,8 +297,9 @@ def set_rating():
     
     if success:
         # 更新缓存的元数据
+        cache_dir = image_processor.get_cache_dir(file_path)
         file_hash = image_processor.get_file_hash(file_path)
-        metadata_path = os.path.join(image_processor.metadata_dir, f"{file_hash}.json")
+        metadata_path = os.path.join(cache_dir, f"meta_{file_hash}.json")
         
         try:
             if os.path.exists(metadata_path):

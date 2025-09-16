@@ -197,6 +197,40 @@ body {
     gap: 20px;
 }
 
+/* 面包屑导航 */
+.breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.breadcrumb-item {
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.breadcrumb-item.clickable {
+    cursor: pointer;
+    color: #4a90e2;
+}
+
+.breadcrumb-item.clickable:hover {
+    background-color: #f0f8ff;
+}
+
+.breadcrumb-item.current {
+    color: #333;
+    font-weight: bold;
+}
+
+.breadcrumb-separator {
+    color: #999;
+    margin: 0 4px;
+}
+
 .view-controls {
     display: flex;
     gap: 5px;
@@ -221,22 +255,66 @@ body {
 .image-grid {
     padding: 30px;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 24px;
     min-height: 400px;
+    align-items: start;
+}
+
+.folder-item {
+    position: relative;
+    background: #f0f8ff;
+    border: 2px solid #4a90e2;
+    border-radius: 12px;
+    padding: 20px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    height: 280px;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(74, 144, 226, 0.1);
+}
+
+.folder-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
+}
+
+.folder-icon {
+    font-size: 48px;
+    margin-bottom: 8px;
+}
+
+.folder-name {
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 4px;
+    word-break: break-word;
+}
+
+.folder-info {
+    font-size: 12px;
+    color: #666;
 }
 
 .image-item {
-    background: white;
+    position: relative;
+    background: #fff;
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-    transition: all 0.3s ease;
     cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    height: 280px;
 }
 
 .image-item:hover {
-    transform: translateY(-5px);
+    transform: translateY(-3px);
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
 }
 
@@ -245,20 +323,29 @@ body {
     height: 200px;
     object-fit: cover;
     display: block;
+    flex-shrink: 0;
 }
 
 .image-info {
-    padding: 15px;
+    padding: 12px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
 }
 
 .image-name {
     font-weight: 600;
     color: #333;
-    margin-bottom: 5px;
+    margin-bottom: 8px;
     font-size: 14px;
-    white-space: nowrap;
+    line-height: 1.3;
     overflow: hidden;
-    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
 }
 
 .image-meta {
@@ -267,6 +354,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    margin-top: auto;
 }
 
 .image-rating {

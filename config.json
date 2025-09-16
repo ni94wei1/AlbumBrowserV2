@@ -9,12 +9,18 @@
   "image_directories": [
     "E:\\测试目录"
   ],
-  "thumbnail_size": [256, 256],
+  "thumbnail_size": [128, 128],
+  "thumbnail_quality": 80,
   "preview_max_size": 1920,
+  "preview_quality": 75,
   "supported_formats": [".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".raw", ".cr2", ".nef", ".arw", ".dng", ".orf", ".rw2"],
   "server": {
     "host": "0.0.0.0",
     "port": 5000,
     "debug": true
+  },
+  "session": {
+    "permanent_session_lifetime": 604800,
+    "remember_login": true
   }
 }

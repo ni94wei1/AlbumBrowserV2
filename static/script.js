@@ -2,6 +2,8 @@
 let currentUser = null;
 let currentDirectory = null;
 let currentImages = [];
+let currentSubdirectories = [];
+let availableDirectories = [];
 let currentPage = 1;
 let totalPages = 1;
 let currentImageIndex = 0;
@@ -150,6 +152,9 @@ async function loadDirectories() {
         const response = await fetch('/api/directories');
         const directories = await response.json();
         
+        // 存储可用目录到全局变量
+        availableDirectories = directories;
+        
         directorySelect.innerHTML = '<option value="">选择目录...</option>';
         directories.forEach(dir => {
             const option = document.createElement('option');
@@ -157,6 +162,14 @@ async function loadDirectories() {
             option.textContent = dir.name;
             directorySelect.appendChild(option);
         });
+        
+        // 自动选择第一个目录
+        if (directories.length > 0) {
+            directorySelect.value = directories[0].path;
+            currentDirectory = directories[0].path;
+            currentPage = 1;
+            await loadImages();
+        }
     } catch (error) {
         console.error('加载目录失败:', error);
     }
@@ -181,20 +194,42 @@ async function loadImages() {
     const sortOrder = document.getElementById('sortOrder').value;
     
     try {
-        const response = await fetch(`/api/images?directory=${encodeURIComponent(currentDirectory)}&page=${currentPage}&sort_by=${sortBy}&sort_order=${sortOrder}`);
+        const response = await fetch(`/api/browse?directory=${encodeURIComponent(currentDirectory)}&page=${currentPage}&sort_by=${sortBy}&sort_order=${sortOrder}`);
         const data = await response.json();
         
         currentImages = data.images;
+        currentSubdirectories = data.subdirectories || [];
         totalPages = data.total_pages;
         
-        displayImages(data.images);
+        displayContent(data.subdirectories || [], data.images);
         updatePagination();
+        updateBreadcrumb();
         
     } catch (error) {
-        console.error('加载图片失败:', error);
-        imageGrid.innerHTML = '<div class="error">加载图片失败</div>';
+        console.error('加载内容失败:', error);
+        imageGrid.innerHTML = '<div class="error">加载内容失败</div>';
     } finally {
         showLoading(false);
+    }
+}
+
+function displayContent(subdirectories, images) {
+    imageGrid.innerHTML = '';
+    
+    // 显示子文件夹
+    if (subdirectories && Array.isArray(subdirectories)) {
+        subdirectories.forEach(subdir => {
+            const folderItem = createFolderItem(subdir);
+            imageGrid.appendChild(folderItem);
+        });
+    }
+    
+    // 显示图片
+    if (images && Array.isArray(images)) {
+        images.forEach((image, index) => {
+            const imageItem = createImageItem(image, index);
+            imageGrid.appendChild(imageItem);
+        });
     }
 }
 
@@ -207,23 +242,135 @@ function displayImages(images) {
     });
 }
 
-function createImageItem(image, index) {
-    const item = document.createElement('div');
-    item.className = 'image-item';
-    item.addEventListener('click', () => openImageViewer(index));
+function createFolderItem(subdir) {
+    const folderItem = document.createElement('div');
+    folderItem.className = 'folder-item';
+    folderItem.onclick = () => navigateToSubdirectory(subdir.path);
     
-    item.innerHTML = `
-        <img class="image-thumbnail" src="/api/image/thumbnail?file_path=${encodeURIComponent(image.file_path)}" alt="${image.metadata.filename}" loading="lazy">
-        <div class="image-info">
-            <div class="image-name">${image.metadata.filename}</div>
-            <div class="image-meta">
-                <span class="image-size">${formatFileSize(image.metadata.file_size)}</span>
-                <span class="image-rating">${'★'.repeat(image.metadata.rating)}${'☆'.repeat(5 - image.metadata.rating)}</span>
-            </div>
-        </div>
+    const folderIcon = document.createElement('div');
+    folderIcon.className = 'folder-icon';
+    folderIcon.innerHTML = '📁';
+    
+    const folderName = document.createElement('div');
+    folderName.className = 'folder-name';
+    folderName.textContent = subdir.name;
+    
+    const folderInfo = document.createElement('div');
+    folderInfo.className = 'folder-info';
+    folderInfo.textContent = `${subdir.image_count} 张图片`;
+    
+    folderItem.appendChild(folderIcon);
+    folderItem.appendChild(folderName);
+    folderItem.appendChild(folderInfo);
+    
+    return folderItem;
+}
+
+function createImageItem(image, index) {
+    const imageItem = document.createElement('div');
+    imageItem.className = 'image-item';
+    imageItem.onclick = () => openImageViewer(index);
+    
+    const img = document.createElement('img');
+    img.className = 'image-thumbnail';
+    img.src = `/api/image/thumbnail?file_path=${encodeURIComponent(image.file_path)}`;
+    img.alt = image.metadata.filename;
+    img.loading = 'lazy';
+    
+    const info = document.createElement('div');
+    info.className = 'image-info';
+    
+    const name = document.createElement('div');
+    name.className = 'image-name';
+    name.textContent = image.metadata.filename;
+    
+    const meta = document.createElement('div');
+    meta.className = 'image-meta';
+    meta.innerHTML = `
+        <span class="image-size">${formatFileSize(image.metadata.file_size)}</span>
+        <span class="image-rating">${'★'.repeat(image.metadata.rating)}${'☆'.repeat(5 - image.metadata.rating)}</span>
     `;
     
-    return item;
+    info.appendChild(name);
+    info.appendChild(meta);
+    imageItem.appendChild(img);
+    imageItem.appendChild(info);
+    
+    return imageItem;
+}
+
+// 导航到子目录
+function navigateToSubdirectory(path) {
+    currentDirectory = path;
+    currentPage = 1;
+    loadImages();
+}
+
+// 更新面包屑导航
+function updateBreadcrumb() {
+    const breadcrumbContainer = document.querySelector('.breadcrumb');
+    if (!breadcrumbContainer) {
+        // 如果没有面包屑容器，创建一个
+        const toolbar = document.querySelector('.toolbar');
+        const breadcrumb = document.createElement('div');
+        breadcrumb.className = 'breadcrumb';
+        toolbar.insertBefore(breadcrumb, toolbar.firstChild);
+    }
+    
+    const breadcrumb = document.querySelector('.breadcrumb');
+    breadcrumb.innerHTML = '';
+    
+    if (!currentDirectory) return;
+    
+    // 获取配置的根目录
+    let rootDir = '';
+    let displayPath = currentDirectory;
+    
+    // 找到当前目录属于哪个根目录
+    for (const dir of availableDirectories) {
+        if (currentDirectory.startsWith(dir.path)) {
+            rootDir = dir.path;
+            displayPath = currentDirectory.substring(dir.path.length);
+            if (displayPath.startsWith('\\') || displayPath.startsWith('/')) {
+                displayPath = displayPath.substring(1);
+            }
+            break;
+        }
+    }
+    
+    // 添加根目录
+    const rootItem = document.createElement('span');
+    rootItem.className = 'breadcrumb-item clickable';
+    rootItem.textContent = '根目录';
+    rootItem.onclick = () => navigateToSubdirectory(rootDir);
+    breadcrumb.appendChild(rootItem);
+    
+    if (displayPath) {
+        const parts = displayPath.split(/[\\\/]/);
+        let currentPath = rootDir;
+        
+        parts.forEach((part, index) => {
+            if (part) {
+                currentPath += (currentPath.endsWith('\\') || currentPath.endsWith('/') ? '' : '\\') + part;
+                
+                const separator = document.createElement('span');
+                separator.className = 'breadcrumb-separator';
+                separator.textContent = ' > ';
+                breadcrumb.appendChild(separator);
+                
+                const item = document.createElement('span');
+                item.className = index === parts.length - 1 ? 'breadcrumb-item current' : 'breadcrumb-item clickable';
+                item.textContent = part;
+                
+                if (index < parts.length - 1) {
+                    const pathToNavigate = currentPath;
+                    item.onclick = () => navigateToSubdirectory(pathToNavigate);
+                }
+                
+                breadcrumb.appendChild(item);
+            }
+        });
+    }
 }
 
 function openImageViewer(index) {
@@ -548,11 +695,17 @@ function getFileHash(filePath) {
 
 async function checkLoginStatus() {
     try {
-        const response = await fetch('/api/directories');
+        const response = await fetch('/api/auth/status');
         if (response.ok) {
-            // 已登录，显示主界面
-            showMainApp();
-            loadDirectories();
+            const data = await response.json();
+            if (data.authenticated) {
+                // 已登录，设置用户信息并显示主界面
+                currentUser = data.user;
+                showMainApp();
+                loadDirectories();
+            } else {
+                showLoginModal();
+            }
         } else {
             // 未登录，显示登录界面
             showLoginModal();
