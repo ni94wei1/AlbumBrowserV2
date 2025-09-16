@@ -589,21 +589,61 @@ class ImageProcessor:
         if not WIN32_AVAILABLE:
             return 0
         try:
-            # 使用Windows API获取文件属性
-            handle = win32file.CreateFile(
-                file_path,
-                win32con.GENERIC_READ,
-                win32con.FILE_SHARE_READ,
-                None,
-                win32con.OPEN_EXISTING,
-                0,
-                None
-            )
-            # 这里需要实现获取星级的逻辑
-            # Windows的星级存储在文件的扩展属性中
-            win32file.CloseHandle(handle)
-            return 0  # 暂时返回0，后续实现
-        except:
+            # 使用win32com.client来获取Windows文件星级评分
+            from win32com.client import Dispatch
+            import os
+            import re
+            
+            # 创建Shell对象用于访问文件属性
+            shell = Dispatch("Shell.Application")
+            
+            # 获取文件所在目录的Folder对象
+            folder_path = os.path.dirname(file_path)
+            file_name = os.path.basename(file_path)
+            
+            folder = shell.NameSpace(folder_path)
+            if folder is None:
+                print(f"无法访问目录: {folder_path}")
+                return 0
+            
+            # 查找文件项
+            item = None
+            for i in range(0, folder.Items().Count):
+                current_item = folder.Items().Item(i)
+                if current_item.Name == file_name:
+                    item = current_item
+                    break
+            
+            if item is None:
+                print(f"找不到文件: {file_name}")
+                return 0
+            
+            # 获取星级评分 (索引19)
+            rating_text = folder.GetDetailsOf(item, 19)
+            
+            # 解析"X 星级"格式的评分
+            if rating_text and "星级" in rating_text:
+                # 提取数字部分
+                match = re.search(r'(\d+)', rating_text)
+                if match:
+                    star_count = int(match.group(1))
+                    return star_count
+            
+            # 如果索引19失败，尝试其他常见索引
+            rating_indexes = [18, 27, 165, 166]
+            for idx in rating_indexes:
+                if idx != 19:  # 已经检查过索引19了
+                    rating_text = folder.GetDetailsOf(item, idx)
+                    if rating_text and ('★' in rating_text or rating_text.isdigit()):
+                        if '★' in rating_text:
+                            star_count = rating_text.count('★')
+                            return star_count
+                        elif rating_text.isdigit():
+                            return int(rating_text)
+            
+            return 0
+        except Exception as e:
+            print(f"获取星级评分时出错: {e}")
             return 0
     
     def set_windows_rating(self, file_path: str, rating: int) -> bool:
