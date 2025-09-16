@@ -1,7 +1,7 @@
 {
   "users": {
     "admin": {
-      "password": "admin123",
+      "password": "pbkdf2:sha256:600000$lJ3N8zV0ovc0hE7b$a639269bcd09df41bfcc41f48e27769d4a852755132d82695fdcbff4c38d053e",
       "role": "admin",
       "accessible_dirs": []
     }
@@ -9,16 +9,33 @@
   "image_directories": [
     "E:\\测试目录"
   ],
-  "thumbnail_size": [128, 128],
-  "thumbnail_quality": 80,
+  "thumbnail_size": [
+    300,
+    0
+  ],
   "preview_max_size": 1920,
-  "preview_quality": 75,
-  "supported_formats": [".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".raw", ".cr2", ".nef", ".arw", ".dng", ".orf", ".rw2"],
+  "supported_formats": [
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".tiff",
+    ".tif",
+    ".bmp",
+    ".raw",
+    ".cr2",
+    ".nef",
+    ".arw",
+    ".dng",
+    ".orf",
+    ".rw2"
+  ],
   "server": {
     "host": "0.0.0.0",
     "port": 5000,
     "debug": true
   },
+  "thumbnail_quality": 70,
+  "preview_quality": 75,
   "session": {
     "permanent_session_lifetime": 604800,
     "remember_login": true

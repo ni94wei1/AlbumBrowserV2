@@ -9,6 +9,26 @@ let totalPages = 1;
 let currentImageIndex = 0;
 let currentZoom = 1;
 
+// Pinterest瀑布流布局变量
+let columnHeights = [];
+let columnCount = 0;
+let itemWidth = 236;
+let itemGap = 16;
+let columns = [];
+
+// 工具函数
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
 // DOM元素
 const loginModal = document.getElementById('loginModal');
 const mainApp = document.getElementById('mainApp');
@@ -48,7 +68,13 @@ function bindEvents() {
     
     // 视图控件
     document.getElementById('gridViewBtn').addEventListener('click', () => setViewMode('grid'));
-    document.getElementById('listViewBtn').addEventListener('click', () => setViewMode('list'));
+    
+    // 窗口大小变化时重新布局
+    window.addEventListener('resize', debounce(() => {
+        if (imageGrid && imageGrid.children.length > 0) {
+            layoutWaterfall();
+        }
+    }, 300));
     
     // 缩略图大小
     document.getElementById('thumbnailSize').addEventListener('input', handleThumbnailSizeChange);
@@ -231,6 +257,11 @@ function displayContent(subdirectories, images) {
             imageGrid.appendChild(imageItem);
         });
     }
+    
+    // 应用瀑布流布局
+    setTimeout(() => {
+        layoutWaterfall();
+    }, 100);
 }
 
 function displayImages(images) {
@@ -247,20 +278,46 @@ function createFolderItem(subdir) {
     folderItem.className = 'folder-item';
     folderItem.onclick = () => navigateToSubdirectory(subdir.path);
     
+    // 创建预览图片容器
+    const previewContainer = document.createElement('div');
+    previewContainer.className = 'folder-preview';
+    
+    if (subdir.preview_image) {
+        // 如果有预览图片，显示图片
+        const previewImg = document.createElement('img');
+        previewImg.className = 'folder-preview-image';
+        previewImg.src = `/api/image/thumbnail?file_path=${encodeURIComponent(subdir.preview_image.file_path)}`;
+        previewImg.alt = subdir.name;
+        previewImg.loading = 'lazy';
+        previewContainer.appendChild(previewImg);
+    } else {
+        // 如果没有预览图片，显示默认背景
+        previewContainer.className += ' folder-preview-empty';
+        previewContainer.innerHTML = '<div class="folder-empty-text">空文件夹</div>';
+    }
+    
+    // 创建文件夹图标（放在角落）
     const folderIcon = document.createElement('div');
-    folderIcon.className = 'folder-icon';
+    folderIcon.className = 'folder-corner-icon';
     folderIcon.innerHTML = '📁';
+    
+    // 创建信息区域
+    const folderInfo = document.createElement('div');
+    folderInfo.className = 'folder-info-container';
     
     const folderName = document.createElement('div');
     folderName.className = 'folder-name';
     folderName.textContent = subdir.name;
     
-    const folderInfo = document.createElement('div');
-    folderInfo.className = 'folder-info';
-    folderInfo.textContent = `${subdir.image_count} 张图片`;
+    const folderCount = document.createElement('div');
+    folderCount.className = 'folder-info';
+    folderCount.textContent = `${subdir.image_count || 0} 张图片`;
     
+    folderInfo.appendChild(folderName);
+    folderInfo.appendChild(folderCount);
+    
+    folderItem.appendChild(previewContainer);
     folderItem.appendChild(folderIcon);
-    folderItem.appendChild(folderName);
     folderItem.appendChild(folderInfo);
     
     return folderItem;
@@ -277,26 +334,153 @@ function createImageItem(image, index) {
     img.alt = image.metadata.filename;
     img.loading = 'lazy';
     
-    const info = document.createElement('div');
-    info.className = 'image-info';
-    
-    const name = document.createElement('div');
-    name.className = 'image-name';
-    name.textContent = image.metadata.filename;
-    
-    const meta = document.createElement('div');
-    meta.className = 'image-meta';
-    meta.innerHTML = `
-        <span class="image-size">${formatFileSize(image.metadata.file_size)}</span>
-        <span class="image-rating">${'★'.repeat(image.metadata.rating)}${'☆'.repeat(5 - image.metadata.rating)}</span>
-    `;
-    
-    info.appendChild(name);
-    info.appendChild(meta);
+    // 直接添加图片到imageItem，不添加额外的白色方块和星星评分
     imageItem.appendChild(img);
-    imageItem.appendChild(info);
     
     return imageItem;
+}
+
+// Pinterest瀑布流布局函数
+function initWaterfallLayout() {
+    const container = imageGrid;
+    if (!container) return;
+    
+    const containerWidth = window.innerWidth > 1400 ? 1400 : window.innerWidth; // 限制最大宽度
+    
+    // 重置容器
+    container.style.height = 'auto';
+    container.style.position = 'relative';
+    
+    // 根据屏幕宽度调整项目宽度 - 更智能的Pinterest风格
+    if (window.innerWidth <= 480) {
+        // 移动端单列
+        columnCount = 1;
+        itemWidth = containerWidth - 40; // 减去左右padding
+        itemGap = 12;
+    } else if (window.innerWidth <= 768) {
+        // 平板两列
+        columnCount = 2;
+        itemWidth = (containerWidth - 60 - itemGap) / columnCount; // 减去左右padding和间距
+        itemGap = 12;
+    } else if (window.innerWidth <= 1024) {
+        // 小屏幕三列
+        columnCount = 3;
+        itemWidth = (containerWidth - 60 - (columnCount - 1) * itemGap) / columnCount;
+        itemGap = 14;
+    } else if (window.innerWidth <= 1200) {
+        // 中等屏幕四列
+        columnCount = 4;
+        itemWidth = (containerWidth - 60 - (columnCount - 1) * itemGap) / columnCount;
+        itemGap = 16;
+    } else {
+        // 大屏幕五列
+        columnCount = 5;
+        itemWidth = (containerWidth - 60 - (columnCount - 1) * itemGap) / columnCount;
+        itemGap = 16;
+    }
+    
+    // 确保项目宽度为整数，避免布局问题
+    itemWidth = Math.floor(itemWidth);
+    
+    // 初始化列高度数组
+    columnHeights = new Array(columnCount).fill(0);
+}
+
+function layoutWaterfallItem(element, index) {
+    return new Promise((resolve) => {
+        const img = element.querySelector('.image-thumbnail');
+        
+        // 如果没有找到图片元素，直接使用默认高度
+        if (!img) {
+            positionItem(element, null);
+            resolve();
+            return;
+        }
+        
+        // 检查图片是否已经加载完成
+        if (img.complete) {
+            positionItem(element, img);
+            resolve();
+        } else {
+            // 如果图片尚未加载完成，设置加载完成后的回调
+            const onLoad = () => {
+                img.removeEventListener('load', onLoad);
+                img.removeEventListener('error', onError);
+                positionItem(element, img);
+                resolve();
+            };
+            
+            const onError = () => {
+                img.removeEventListener('load', onLoad);
+                img.removeEventListener('error', onError);
+                positionItem(element, null);
+                resolve();
+            };
+            
+            img.addEventListener('load', onLoad);
+            img.addEventListener('error', onError);
+        }
+    });
+}
+
+function positionItem(element, img) {
+    // 找到最短的列
+    let shortestColumn = 0;
+    let minHeight = columnHeights[0];
+    
+    for (let i = 1; i < columnCount; i++) {
+        if (columnHeights[i] < minHeight) {
+            minHeight = columnHeights[i];
+            shortestColumn = i;
+        }
+    }
+    
+    // 计算位置
+    const left = shortestColumn * (itemWidth + itemGap);
+    const top = columnHeights[shortestColumn];
+    
+    // 设置元素位置
+    element.style.left = left + 'px';
+    element.style.top = top + 'px';
+    element.style.width = itemWidth + 'px';
+    
+    // 计算元素高度
+    let itemHeight = itemWidth; // 默认高度
+    
+    if (img && img.naturalWidth && img.naturalHeight) {
+        // 根据图片比例计算高度
+        const aspectRatio = img.naturalHeight / img.naturalWidth;
+        const imageHeight = itemWidth * aspectRatio;
+        const infoHeight = element.querySelector('.image-info') ? 50 : 0;
+        itemHeight = imageHeight + infoHeight;
+    } else if (element.classList.contains('folder-item')) {
+        // 计算文件夹项目的实际高度
+        const previewHeight = 180; // 预览区域固定高度
+        const infoHeight = 100; // 信息区域固定高度
+        itemHeight = previewHeight + infoHeight;
+    } else {
+        // 其他项目的默认高度
+        itemHeight = itemWidth + 50;
+    }
+    
+    // 更新列高度
+    columnHeights[shortestColumn] += itemHeight + itemGap;
+    
+    // 更新容器高度
+    const maxHeight = Math.max(...columnHeights);
+    imageGrid.style.height = maxHeight + 'px';
+}
+
+async function layoutWaterfall() {
+    if (!imageGrid) return;
+    
+    initWaterfallLayout();
+    
+    const items = imageGrid.querySelectorAll('.image-item, .folder-item');
+    
+    // 并行布局元素以提高性能
+    const promises = Array.from(items).map((item, index) => layoutWaterfallItem(item, index));
+    await Promise.all(promises);
 }
 
 // 导航到子目录

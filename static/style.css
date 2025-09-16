@@ -6,28 +6,31 @@
 }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    background: #f8f9fa;
     min-height: 100vh;
     color: #333;
+    line-height: 1.5;
 }
 
 .hidden {
     display: none !important;
 }
 
-/* 按钮样式 */
+/* 按钮样式 - Pinterest风格 */
 .btn {
     padding: 8px 16px;
     border: none;
-    border-radius: 6px;
+    border-radius: 4px;
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .btn-primary {
@@ -129,24 +132,25 @@ body {
     display: none;
 }
 
-/* 主界面头部 */
+/* 主界面头部 - Pinterest风格 */
 .header {
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(10px);
-    padding: 15px 30px;
+    background: white;
+    padding: 10px 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
     position: sticky;
     top: 0;
     z-index: 100;
+    height: 60px;
 }
 
 .header h1 {
     color: #333;
-    font-size: 20px;
-    font-weight: 600;
+    font-size: 24px;
+    font-weight: 700;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .directory-select {
@@ -163,14 +167,15 @@ body {
     font-weight: 500;
 }
 
-/* 工具栏 */
+/* 工具栏 - Pinterest风格 */
 .toolbar {
-    background: rgba(255, 255, 255, 0.9);
-    padding: 15px 30px;
+    background: white;
+    padding: 10px 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid #e1e5e9;
+    border-top: 1px solid #e1e5e9;
 }
 
 .sort-controls {
@@ -251,82 +256,83 @@ body {
     width: 100px;
 }
 
-/* 图片网格 */
+/* 图片网格 - Pinterest瀑布流布局 */
 .image-grid {
-    padding: 30px;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 24px;
+    padding: 20px;
+    position: relative;
     min-height: 400px;
-    align-items: start;
+    max-width: 1400px;
+    margin: 0 auto;
 }
 
 .folder-item {
-    position: relative;
-    background: #f0f8ff;
-    border: 2px solid #4a90e2;
-    border-radius: 12px;
-    padding: 20px;
+    position: absolute;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
+    width: 236px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+    break-inside: avoid;
+    height: 280px; /* 固定高度，与JavaScript计算一致 */
     display: flex;
     flex-direction: column;
-    align-items: center;
-    text-align: center;
-    height: 280px;
-    justify-content: center;
-    box-shadow: 0 2px 8px rgba(74, 144, 226, 0.1);
 }
 
 .folder-item:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
-.folder-icon {
-    font-size: 48px;
-    margin-bottom: 8px;
-}
-
-.folder-name {
-    font-weight: bold;
-    color: #333;
-    margin-bottom: 4px;
-    word-break: break-word;
-}
-
-.folder-info {
-    font-size: 12px;
-    color: #666;
-}
-
-.image-item {
+.folder-preview {
     position: relative;
-    background: #fff;
-    border-radius: 12px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    display: flex;
-    flex-direction: column;
-    height: 280px;
-}
-
-.image-item:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-}
-
-.image-thumbnail {
     width: 100%;
-    height: 200px;
-    object-fit: cover;
-    display: block;
-    flex-shrink: 0;
+    height: 180px; /* 固定高度，与JavaScript计算一致 */
+    background: #f0f8ff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
 }
 
-.image-info {
+.folder-preview-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+}
+
+.folder-item:hover .folder-preview-image {
+    transform: scale(1.03);
+}
+
+.folder-preview-empty {
+    background: linear-gradient(135deg, #f0f8ff 0%, #e6f3ff 100%);
+}
+
+.folder-empty-text {
+    color: #4a90e2;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.folder-corner-icon {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.folder-info-container {
     padding: 12px;
     flex: 1;
     display: flex;
@@ -334,7 +340,7 @@ body {
     justify-content: space-between;
 }
 
-.image-name {
+.folder-name {
     font-weight: 600;
     color: #333;
     margin-bottom: 8px;
@@ -348,28 +354,72 @@ body {
     word-break: break-word;
 }
 
-.image-meta {
+.folder-info {
     font-size: 12px;
     color: #666;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
     margin-top: auto;
+}
+
+.image-item {
+    position: absolute;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+    width: 236px;
+    break-inside: avoid;
+}
+
+.image-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.image-thumbnail {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 8px 8px 0 0;
+    transition: transform 0.3s ease;
+}
+
+.image-item:hover .image-thumbnail {
+    transform: scale(1.03);
+}
+
+.image-info {
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.image-name {
+    display: none;
+}
+
+.image-meta {
+    display: none;
 }
 
 .image-rating {
     color: #ffc107;
+    font-size: 16px;
+    display: flex;
+    gap: 2px;
 }
 
 /* 加载动画 */
 .loading-spinner {
-    grid-column: 1 / -1;
+    width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 60px;
-    color: white;
+    color: #666;
 }
 
 .loading-spinner i {
@@ -377,32 +427,45 @@ body {
     margin-bottom: 20px;
 }
 
-/* 分页 */
+/* 分页 - Pinterest风格 */
 .pagination {
-    padding: 30px;
+    padding: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 20px;
+    background: white;
+    margin-top: 20px;
+    border-top: 1px solid #e1e5e9;
 }
 
 .page-info {
-    color: white;
+    color: #666;
     font-weight: 500;
     padding: 0 20px;
 }
 
-/* 图片查看器 */
+/* 图片查看器 - Pinterest风格 */
 .image-viewer {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.95);
+    background: rgba(0, 0, 0, 0.9);
     z-index: 2000;
     display: flex;
     flex-direction: column;
+    animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
 .viewer-header {
@@ -604,24 +667,27 @@ body {
     font-size: 14px;
 }
 
-/* 响应式设计 */
+/* 响应式设计 - Pinterest风格 */
 @media (max-width: 768px) {
     .header {
-        flex-direction: column;
-        gap: 15px;
-        padding: 15px;
+        padding: 10px;
+        height: auto;
+        flex-wrap: wrap;
     }
     
     .toolbar {
         flex-direction: column;
-        gap: 15px;
-        padding: 15px;
+        gap: 10px;
+        padding: 10px;
     }
     
     .image-grid {
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-        gap: 15px;
-        padding: 15px;
+        padding: 10px;
+        max-width: 100%;
+    }
+    
+    .image-item, .folder-item {
+        width: calc(50% - 8px);
     }
     
     .viewer-content {
@@ -641,9 +707,15 @@ body {
 
 @media (max-width: 480px) {
     .image-grid {
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        gap: 10px;
-        padding: 10px;
+        padding: 8px;
+    }
+    
+    .image-item, .folder-item {
+        width: 100%;
+        position: relative !important;
+        margin-bottom: 12px;
+        left: 0 !important;
+        top: 0 !important;
     }
     
     .modal-content {

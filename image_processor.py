@@ -60,7 +60,7 @@ class ImageProcessor:
             return None
     
     def generate_thumbnail(self, file_path: str) -> Optional[str]:
-        """生成缩略图（裁剪为正方形）"""
+        """生成缩略图（保持原比例，最大尺寸256）"""
         cache_dir = self.get_cache_dir(file_path)
         file_hash = self.get_file_hash(file_path)
         thumbnail_path = os.path.join(cache_dir, f"thumb_{file_hash}.jpg")
@@ -73,43 +73,25 @@ class ImageProcessor:
             if not image:
                 return None
             
-            # 生成正方形缩略图（裁剪方式）
-            size = self.config.config['thumbnail_size'][0]  # 使用正方形
+            # 保持原比例，最大尺寸256
+            max_size = 256
             
-            # 计算裁剪区域（居中裁剪）
-            width, height = image.size
-            if width > height:
-                # 宽图，裁剪左右
-                left = (width - height) // 2
-                top = 0
-                right = left + height
-                bottom = height
-            else:
-                # 高图，裁剪上下
-                left = 0
-                top = (height - width) // 2
-                right = width
-                bottom = top + width
-            
-            # 裁剪为正方形
-            cropped = image.crop((left, top, right, bottom))
-            
-            # 缩放到目标尺寸
-            thumbnail = cropped.resize((size, size), Image.Resampling.LANCZOS)
+            # 按比例缩放，最大边不超过指定尺寸
+            image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
             
             # 处理透明通道，转换为RGB模式
-            if thumbnail.mode in ('RGBA', 'LA', 'P'):
+            if image.mode in ('RGBA', 'LA', 'P'):
                 # 创建白色背景
-                background = Image.new('RGB', thumbnail.size, (255, 255, 255))
-                if thumbnail.mode == 'P':
-                    thumbnail = thumbnail.convert('RGBA')
-                background.paste(thumbnail, mask=thumbnail.split()[-1] if thumbnail.mode == 'RGBA' else None)
-                thumbnail = background
-            elif thumbnail.mode != 'RGB':
-                thumbnail = thumbnail.convert('RGB')
+                background = Image.new('RGB', image.size, (255, 255, 255))
+                if image.mode == 'P':
+                    image = image.convert('RGBA')
+                background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
+                image = background
+            elif image.mode != 'RGB':
+                image = image.convert('RGB')
             
             thumbnail_quality = self.config.config.get('thumbnail_quality', 70)
-            thumbnail.save(thumbnail_path, 'JPEG', quality=thumbnail_quality, optimize=True, progressive=True)
+            image.save(thumbnail_path, 'JPEG', quality=thumbnail_quality, optimize=True, progressive=True)
             return thumbnail_path
             
         except Exception as e:

@@ -1,7 +1,10 @@
 # 缓存目录
 cache/
-__pycache__/
 *.pyc
+__pycache__/
+.env
+*.log
+config_baseline.json
 *.pyo
 *.pyd
 

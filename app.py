@@ -1,17 +1,35 @@
-from flask import Flask, request, jsonify, send_file, render_template, session
+from flask import Flask, render_template, request, jsonify, session, send_file
 from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import json
-from datetime import timedelta
+import sys
+import argparse
+from datetime import datetime, timedelta
 from config import Config
 from image_processor import ImageProcessor
+import shutil
+import atexit
 from functools import wraps
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here'  # 在生产环境中应该使用更安全的密钥
+import os
+# 使用随机生成的密钥
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = False  # 开发环境设为False，生产环境应设为True
+app.config['SESSION_COOKIE_MAX_AGE'] = 604800  # 7天，与permanent_session_lifetime保持一致
 CORS(app)
+
+# 解析命令行参数
+def parse_args():
+    parser = argparse.ArgumentParser(description='相册管理工具')
+    parser.add_argument('--clear-cache', action='store_true', 
+                       help='清理所有缩略图和预览图缓存')
+    parser.add_argument('--rebuild-cache', action='store_true',
+                       help='清理并重新生成所有缓存')
+    return parser.parse_args()
 
 # 初始化配置和图片处理器
 config = Config()
@@ -21,11 +39,43 @@ image_processor = ImageProcessor(config)
 session_config = config.config.get('session', {})
 app.permanent_session_lifetime = timedelta(seconds=session_config.get('permanent_session_lifetime', 86400))
 
+# 获取配置中的图片目录
+image_directories = config.config.get('image_directories', [])
+
+# 处理命令行参数
+args = parse_args()
+
+if len(sys.argv) > 1 and sys.argv[1] == '--rebuild-cache':
+    print("正在清理缓存...")
+    # 清理所有缓存
+    image_processor.clean_all_cache()
+    print("缓存清理完成！")
+    
+    if len(sys.argv) > 2 and sys.argv[2] == '--config-changed':
+        print("配置文件已更改，正在重新生成缓存...")
+    else:
+        print("正在重新生成缓存...")
+        # 预生成所有图片的缓存（递归处理所有子目录）
+        for directory in image_directories:
+            if os.path.exists(directory):
+                print(f"正在处理目录: {directory}")
+                images = image_processor.scan_directory(directory)  # 使用递归扫描
+                total = len(images)
+                for i, image in enumerate(images, 1):
+                    try:
+                        # 生成缩略图
+                        image_processor.generate_thumbnail(image['file_path'])
+                        # 生成预览图
+                        image_processor.generate_preview(image['file_path'])
+                        print(f"进度: {i}/{total} - {image['metadata']['filename']}")
+                    except Exception as e:
+                        print(f"处理失败 {image['metadata']['filename']}: {e}")
+        print("缓存重新生成完成！")
+    
+    sys.exit(0)
+
 # 只在首次启动时清理旧的cache目录
 image_processor.clean_old_cache()
-
-# 注释掉自动清理所有缓存的功能，避免每次重启都删除缓存
-# image_processor.clean_all_cache()
 
 def login_required(f):
     """登录验证装饰器"""
@@ -135,10 +185,17 @@ def browse_directory():
                 continue
             item_path = os.path.join(directory, item)
             if os.path.isdir(item_path):
+                # 获取文件夹中的图片数量和预览图片
+                folder_images = image_processor.scan_current_directory(item_path)
+                image_count = len(folder_images)
+                preview_image = folder_images[0] if folder_images else None
+                
                 subdirectories.append({
                     'name': item,
                     'path': item_path,
-                    'type': 'directory'
+                    'type': 'directory',
+                    'image_count': image_count,
+                    'preview_image': preview_image
                 })
     except PermissionError:
         pass
