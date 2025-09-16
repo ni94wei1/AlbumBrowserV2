@@ -356,7 +356,6 @@ body {
     text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
     -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.5);
     z-index: 20;
-    background: linear-gradient(to top, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 100%);
     margin: 0;
 }
 
