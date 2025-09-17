@@ -4,10 +4,13 @@ import hashlib
 import shutil
 import os
 import tempfile
+import threading
+import queue
 from PIL import Image, ExifTags, ImageDraw, ImageFont
 from PIL.ExifTags import TAGS
 import exifread
 from typing import Dict, List, Tuple, Optional
+from datetime import datetime
 
 # 暂时禁用rawpy依赖，使用替代方法处理RAW文件
 RAWPY_AVAILABLE = False
@@ -21,10 +24,130 @@ except ImportError:
     WIN32_AVAILABLE = False
     print("警告: pywin32未安装，Windows星级评分功能将被禁用")
 
+# 图片星级评分管理系统
+class ImageRatingSystem:
+    """图片星级评分管理系统"""
+    
+    _instance = None
+    
+    def __new__(cls, db_path="ratings_db.json"):
+        """单例模式实现"""
+        if cls._instance is None:
+            cls._instance = super(ImageRatingSystem, cls).__new__(cls)
+            cls._instance._init(db_path)
+        return cls._instance
+    
+    def _init(self, db_path):
+        """初始化评分系统"""
+        self.db_path = db_path
+        self.ratings_db = {}
+        self._load_database()
+    
+    def _load_database(self):
+        """从文件加载评分数据库"""
+        try:
+            if os.path.exists(self.db_path):
+                with open(self.db_path, 'r', encoding='utf-8') as f:
+                    self.ratings_db = json.load(f)
+                print(f"成功加载评分数据库，共包含 {len(self.ratings_db)} 条评分记录")
+            else:
+                print(f"评分数据库文件不存在，将创建新文件: {self.db_path}")
+                self._save_database()
+        except Exception as e:
+            print(f"加载评分数据库失败: {e}")
+            self.ratings_db = {}
+    
+    def _save_database(self):
+        """保存评分数据库到文件"""
+        try:
+            with open(self.db_path, 'w', encoding='utf-8') as f:
+                json.dump(self.ratings_db, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"保存评分数据库失败: {e}")
+    
+    def _get_file_key(self, file_path):
+        """获取文件的唯一标识键"""
+        # 使用绝对路径作为键，确保唯一性
+        return os.path.abspath(file_path)
+    
+    def get_rating(self, file_path):
+        """获取图片的星级评分"""
+        file_key = self._get_file_key(file_path)
+        if file_key in self.ratings_db:
+            rating_info = self.ratings_db[file_key]
+            return rating_info.get('rating', 0)
+        return 0
+    
+    def set_rating(self, file_path, rating):
+        """设置图片的星级评分"""
+        # 验证参数
+        if not isinstance(rating, int) or rating < 0 or rating > 5:
+            print(f"错误: 无效的星级评分 (必须是0-5之间的整数) - {rating}")
+            return False
+        
+        if not os.path.exists(file_path):
+            print(f"错误: 文件不存在 - {file_path}")
+            return False
+        
+        try:
+            file_key = self._get_file_key(file_path)
+            timestamp = datetime.now().isoformat()
+            
+            # 存储评分信息，包括评分值、时间戳和文件基本信息
+            self.ratings_db[file_key] = {
+                'rating': rating,
+                'timestamp': timestamp,
+                'filename': os.path.basename(file_path),
+                'directory': os.path.dirname(file_path)
+            }
+            
+            # 保存数据库
+            self._save_database()
+            
+            print(f"成功设置评分: {rating}星 到文件: {file_path}")
+            return True
+        except Exception as e:
+            print(f"设置评分失败: {e}")
+            return False
+    
+    def remove_rating(self, file_path):
+        """移除图片的星级评分"""
+        try:
+            file_key = self._get_file_key(file_path)
+            if file_key in self.ratings_db:
+                del self.ratings_db[file_key]
+                self._save_database()
+                print(f"成功移除文件的评分: {file_path}")
+                return True
+            return False
+        except Exception as e:
+            print(f"移除评分失败: {e}")
+            return False
+
+# 创建全局评分系统实例
+rating_system = ImageRatingSystem()
+
 class ImageProcessor:
     def __init__(self, config):
         self.config = config
         # 不再使用统一的cache目录，改为在图片原目录下生成隐藏文件夹
+        
+        # 异步缓存生成相关设置
+        self.cache_queue = queue.Queue()  # 缓存生成队列
+        self.priority_queue = queue.PriorityQueue()  # 优先级队列，用于处理用户请求的图片
+        self.cache_workers = []  # 工作线程列表
+        self.max_workers = 2  # 最大工作线程数
+        self.running = True  # 工作线程运行状态
+        
+        # 启动工作线程
+        self._start_workers()
+        
+        # 记录需要优先处理的图片
+        self.priority_images = set()
+        
+        # 注册退出时的清理函数
+        import atexit
+        atexit.register(self._stop_workers)
     
     def get_cache_dir(self, file_path: str) -> str:
         """获取图片文件对应的缓存目录"""
@@ -38,6 +161,144 @@ class ImageProcessor:
         stat = os.stat(file_path)
         content = f"{file_path}_{stat.st_mtime}_{stat.st_size}"
         return hashlib.md5(content.encode()).hexdigest()
+    
+    def _start_workers(self):
+        """启动工作线程"""
+        for _ in range(self.max_workers):
+            worker = threading.Thread(target=self._worker_thread, daemon=True)
+            worker.start()
+            self.cache_workers.append(worker)
+        print(f"已启动 {self.max_workers} 个缓存生成工作线程")
+    
+    def _stop_workers(self):
+        """停止工作线程"""
+        self.running = False
+        # 清空队列并添加结束信号
+        for _ in range(self.max_workers):
+            self.cache_queue.put(None)
+            self.priority_queue.put((0, None))
+        # 等待所有线程结束
+        for worker in self.cache_workers:
+            worker.join(timeout=2.0)
+        print(f"已停止所有缓存生成工作线程")
+    
+    def _worker_thread(self):
+        """工作线程主函数，处理异步生成缩略图和预览图的任务"""
+        while self.running:
+            try:
+                # 先检查优先级队列（优先处理用户直接点击查看的图片）
+                try:
+                    # 使用较短的超时，以便定期检查running状态
+                    priority, task = self.priority_queue.get(timeout=0.5)
+                    if task is None:  # 结束信号
+                        self.priority_queue.task_done()
+                        break
+                    # 处理优先级任务
+                    if task['type'] == 'preview':
+                        file_path = task['file_path']
+                        print(f"优先级处理预览图: {file_path}")
+                        self._process_preview_task(file_path)
+                    self.priority_queue.task_done()
+                    continue  # 处理完优先级任务后，继续下一次循环，优先处理其他优先级任务
+                except queue.Empty:
+                    pass  # 优先级队列为空，检查普通队列
+                
+                # 检查普通队列（处理目录浏览时的批量生成任务）
+                try:
+                    task = self.cache_queue.get(timeout=0.5)
+                    if task is None:  # 结束信号
+                        self.cache_queue.task_done()
+                        break
+                    # 处理普通任务
+                    file_path = task['file_path']
+                    task_type = task['type']
+                    
+                    # 检查这个任务是否已被添加到优先级队列
+                    with threading.Lock():
+                        if task_type == 'preview' and file_path in self.priority_images:
+                            # 如果已经在优先级队列中，跳过此任务
+                            self.cache_queue.task_done()
+                            continue
+                    
+                    # 根据任务类型处理
+                    if task_type == 'thumbnail':
+                        print(f"异步生成缩略图: {file_path}")
+                        self.generate_thumbnail(file_path)
+                    elif task_type == 'preview':
+                        print(f"异步生成预览图: {file_path}")
+                        self.generate_preview(file_path)
+                    
+                    self.cache_queue.task_done()
+                except queue.Empty:
+                    pass  # 两个队列都为空，继续循环
+            except Exception as e:
+                print(f"工作线程异常: {e}")
+    
+    def _process_preview_task(self, file_path):
+        """处理预览图任务"""
+        try:
+            # 先检查是否已经生成了预览图
+            cache_dir = self.get_cache_dir(file_path)
+            file_hash = self.get_file_hash(file_path)
+            preview_path = os.path.join(cache_dir, f"preview_{file_hash}.jpg")
+            
+            if not os.path.exists(preview_path):
+                print(f"优先级处理预览图: {file_path}")
+                self.generate_preview(file_path)
+            else:
+                print(f"预览图已存在，无需重新生成: {file_path}")
+            
+            # 从优先级图片集合中移除
+            with threading.Lock():
+                self.priority_images.discard(file_path)
+        except Exception as e:
+            print(f"处理预览图任务失败 {file_path}: {e}")
+    
+    def prioritize_preview(self, file_path):
+        """优先处理指定文件的预览图生成
+        
+        当用户点击查看大图但预览图尚未生成时，调用此方法将预览图生成任务优先处理
+        
+        Args:
+            file_path: 需要优先处理的图片文件路径
+        
+        Returns:
+            bool: 是否成功添加到优先级队列
+        """
+        try:
+            # 检查文件是否存在
+            if not os.path.exists(file_path):
+                print(f"错误: 文件不存在 - {file_path}")
+                return False
+            
+            # 检查预览图是否已存在
+            cache_dir = self.get_cache_dir(file_path)
+            file_hash = self.get_file_hash(file_path)
+            preview_path = os.path.join(cache_dir, f"preview_{file_hash}.jpg")
+            
+            if os.path.exists(preview_path):
+                print(f"预览图已存在，无需优先处理: {file_path}")
+                return True
+            
+            # 检查是否已经在优先级队列中
+            with threading.Lock():
+                if file_path in self.priority_images:
+                    print(f"预览图已在优先级队列中: {file_path}")
+                    return True
+                
+                # 添加到优先级集合和队列
+                self.priority_images.add(file_path)
+                # 使用高优先级（较小的数字表示较高优先级）
+                self.priority_queue.put((1, {'type': 'preview', 'file_path': file_path}))
+                
+            print(f"已将{file_path}添加到预览图优先级队列")
+            return True
+        except Exception as e:
+            print(f"添加预览图优先级任务失败: {e}")
+            # 出现异常时，从优先级集合中移除（如果已添加）
+            with threading.Lock():
+                self.priority_images.discard(file_path)
+            return False
     
     def is_supported_format(self, file_path: str) -> bool:
         """检查是否为支持的图片格式"""
@@ -605,75 +866,160 @@ class ImageProcessor:
         print(f"总共清理了 {cleaned_count} 个缓存目录")
     
     def get_windows_rating(self, file_path: str) -> int:
-        """获取Windows文件星级评分"""
-        if not WIN32_AVAILABLE:
-            return 0
+        """获取图片星级评分
+        
+        这个方法会：
+        1. 首先尝试从内部评分系统获取评分
+        2. 如果内部评分系统没有记录，则尝试使用Windows COM接口获取评分
+        3. 如果所有方法都失败，则返回0
+        """
         try:
-            # 使用win32com.client来获取Windows文件星级评分
-            from win32com.client import Dispatch
-            import os
-            import re
-            
-            # 创建Shell对象用于访问文件属性
-            shell = Dispatch("Shell.Application")
-            
-            # 获取文件所在目录的Folder对象
-            folder_path = os.path.dirname(file_path)
-            file_name = os.path.basename(file_path)
-            
-            folder = shell.NameSpace(folder_path)
-            if folder is None:
-                print(f"无法访问目录: {folder_path}")
+            if not os.path.exists(file_path):
+                print(f"错误: 文件不存在 - {file_path}")
                 return 0
             
-            # 查找文件项
-            item = None
-            for i in range(0, folder.Items().Count):
-                current_item = folder.Items().Item(i)
-                if current_item.Name == file_name:
-                    item = current_item
-                    break
+            # 1. 首先从内部评分系统获取评分
+            internal_rating = rating_system.get_rating(file_path)
+            if internal_rating != 0:
+                print(f"从内部评分系统获取评分: {internal_rating} 对于文件: {file_path}")
+                return internal_rating
             
-            if item is None:
-                print(f"找不到文件: {file_name}")
-                return 0
+            # 2. 如果内部评分系统没有记录，尝试使用Windows COM接口获取评分
+            if WIN32_AVAILABLE:
+                try:
+                    from win32com.client import Dispatch
+                    import re
+                    
+                    # 创建Shell对象用于访问文件属性
+                    shell = Dispatch("Shell.Application")
+                    
+                    # 获取文件所在目录的Folder对象
+                    folder_path = os.path.dirname(file_path)
+                    file_name = os.path.basename(file_path)
+                    
+                    folder = shell.NameSpace(folder_path)
+                    if folder:
+                        # 查找文件项
+                        item = folder.ParseName(file_name)
+                        if not item:
+                            # 如果ParseName失败，尝试遍历查找
+                            for i in range(0, folder.Items().Count):
+                                current_item = folder.Items().Item(i)
+                                if current_item.Name == file_name:
+                                    item = current_item
+                                    break
+                        
+                        if item:
+                            # 获取星级评分 (索引19)
+                            rating_text = folder.GetDetailsOf(item, 19)
+                            
+                            # 解析"X 星级"格式的评分
+                            if rating_text and "星级" in rating_text:
+                                # 提取数字部分
+                                match = re.search(r'(\d+)', rating_text)
+                                if match:
+                                    star_count = int(match.group(1))
+                                    # 将Windows评分同步到内部评分系统
+                                    rating_system.set_rating(file_path, star_count)
+                                    print(f"从Windows获取评分: {star_count} 对于文件: {file_path}")
+                                    return star_count
+                            
+                            # 如果索引19失败，尝试其他常见索引
+                            rating_indexes = [18, 27, 165, 166]
+                            for idx in rating_indexes:
+                                if idx != 19:  # 已经检查过索引19了
+                                    rating_text = folder.GetDetailsOf(item, idx)
+                                    if rating_text and ('★' in rating_text or rating_text.isdigit()):
+                                        if '★' in rating_text:
+                                            star_count = rating_text.count('★')
+                                        else:
+                                            star_count = int(rating_text)
+                                        # 将Windows评分同步到内部评分系统
+                                        rating_system.set_rating(file_path, star_count)
+                                        print(f"从Windows获取评分: {star_count} 对于文件: {file_path}")
+                                        return star_count
+                except Exception as e:
+                    print(f"Windows COM接口获取星级评分失败: {e}")
             
-            # 获取星级评分 (索引19)
-            rating_text = folder.GetDetailsOf(item, 19)
-            
-            # 解析"X 星级"格式的评分
-            if rating_text and "星级" in rating_text:
-                # 提取数字部分
-                match = re.search(r'(\d+)', rating_text)
-                if match:
-                    star_count = int(match.group(1))
-                    return star_count
-            
-            # 如果索引19失败，尝试其他常见索引
-            rating_indexes = [18, 27, 165, 166]
-            for idx in rating_indexes:
-                if idx != 19:  # 已经检查过索引19了
-                    rating_text = folder.GetDetailsOf(item, idx)
-                    if rating_text and ('★' in rating_text or rating_text.isdigit()):
-                        if '★' in rating_text:
-                            star_count = rating_text.count('★')
-                            return star_count
-                        elif rating_text.isdigit():
-                            return int(rating_text)
-            
+            # 3. 如果所有方法都失败，返回0
             return 0
         except Exception as e:
             print(f"获取星级评分时出错: {e}")
             return 0
     
     def set_windows_rating(self, file_path: str, rating: int) -> bool:
-        """设置Windows文件星级评分"""
-        if not WIN32_AVAILABLE:
-            return False
+        """设置图片星级评分
+        
+        这个方法会：
+        1. 首先尝试使用Windows COM接口设置星级评分
+        2. 如果Windows方法失败或不支持，则使用内部评分系统
+        3. 无论哪种方式，都会更新元数据缓存
+        """
         try:
-            # 这里需要实现设置星级的逻辑
-            # Windows的星级需要通过COM接口或者直接操作NTFS流来设置
-            return True
+            # 验证参数
+            if not isinstance(rating, int) or rating < 0 or rating > 5:
+                print(f"错误: 无效的星级评分 (必须是0-5之间的整数) - {rating}")
+                return False
+            
+            if not os.path.exists(file_path):
+                print(f"错误: 文件不存在 - {file_path}")
+                return False
+            
+            # 标志变量，跟踪是否成功设置了评分
+            rating_set = False
+            
+            # 1. 尝试使用Windows COM接口设置星级
+            if WIN32_AVAILABLE:
+                try:
+                    from win32com.client import Dispatch
+                    
+                    # 创建Shell对象
+                    shell = Dispatch("Shell.Application")
+                    
+                    # 获取文件所在目录和文件名
+                    folder_path = os.path.dirname(file_path)
+                    file_name = os.path.basename(file_path)
+                    
+                    # 获取文件夹对象
+                    folder = shell.NameSpace(folder_path)
+                    if folder:
+                        # 查找文件项
+                        item = folder.ParseName(file_name)
+                        if item:
+                            # 尝试使用不同的方法设置星级
+                            # 注意：在现代Windows系统中，直接设置星级受到限制
+                            print(f"尝试使用Windows COM接口设置星级: {rating} 到文件: {file_path}")
+                            
+                            # 这里我们使用内部评分系统作为主要方法
+                            # 因为直接通过COM接口设置Windows星级在现代系统中受到限制
+                            # 我们保留这个代码作为兼容性尝试
+                            
+                except Exception as e:
+                    print(f"Windows COM接口设置星级失败: {e}")
+            
+            # 2. 使用我们的内部评分系统（主要方法）
+            if not rating_set:
+                rating_set = rating_system.set_rating(file_path, rating)
+            
+            # 3. 更新元数据缓存
+            if rating_set:
+                try:
+                    cache_dir = self.get_cache_dir(file_path)
+                    file_hash = self.get_file_hash(file_path)
+                    metadata_path = os.path.join(cache_dir, f"meta_{file_hash}.json")
+                    
+                    if os.path.exists(metadata_path):
+                        with open(metadata_path, 'r', encoding='utf-8') as f:
+                            metadata = json.load(f)
+                        metadata['rating'] = rating
+                        with open(metadata_path, 'w', encoding='utf-8') as f:
+                            json.dump(metadata, f, indent=2, ensure_ascii=False)
+                        print(f"成功更新元数据缓存: {metadata_path}")
+                except Exception as e:
+                    print(f"更新元数据缓存失败: {e}")
+                    # 即使缓存更新失败，评分设置仍然成功
+            
+            return rating_set
         except Exception as e:
             print(f"设置星级失败 {file_path}: {e}")
             return False
@@ -737,14 +1083,22 @@ class ImageProcessor:
         return images
     
     def scan_current_directory(self, directory: str) -> List[Dict]:
-        """扫描当前目录中的图片文件（不递归子目录）"""
+        """扫描当前目录中的图片文件（不递归子目录）
+        
+        优化逻辑：
+        1. 先扫描所有图片文件，收集信息
+        2. 优先生成前两张缩略图（同步），让客户端能快速进入目录
+        3. 其余缩略图和所有预览图异步生成，提高用户体验
+        """
         images = []
+        image_paths = []
         
         try:
+            # 第一阶段：收集所有图片信息
             for file in os.listdir(directory):
                 if file.startswith('.'):  # 跳过隐藏文件
                     continue
-                       
+                        
                 file_path = os.path.join(directory, file)
                 
                 # 只处理文件，不处理目录
@@ -778,19 +1132,63 @@ class ImageProcessor:
                     
                     # 避免重复添加
                     if not any(img['file_path'] == display_path for img in images):
+                        # 提取元数据，但不生成缩略图和预览图
                         metadata = self.extract_metadata(display_path)
+                        
+                        # 先检查缩略图是否已存在
+                        cache_dir = self.get_cache_dir(display_path)
+                        file_hash = self.get_file_hash(display_path)
+                        thumbnail_path = os.path.join(cache_dir, f"thumb_{file_hash}.jpg")
+                        preview_path = os.path.join(cache_dir, f"preview_{file_hash}.jpg")
                         
                         image_info = {
                             'file_path': display_path,
                             'relative_path': os.path.relpath(display_path, directory),
-                            'thumbnail_path': self.generate_thumbnail(display_path),
-                            'preview_path': self.generate_preview(display_path),
+                            'thumbnail_path': thumbnail_path if os.path.exists(thumbnail_path) else None,
+                            'preview_path': preview_path if os.path.exists(preview_path) else None,
                             'metadata': metadata,
                             'has_raw': raw_path is not None,
                             'has_jpg': jpg_path is not None
                         }
                         
                         images.append(image_info)
+                        image_paths.append(display_path)
+            
+            # 第二阶段：优先生成前两张缩略图（同步）
+            initial_thumbnails_count = 0
+            for i, image_path in enumerate(image_paths):
+                if initial_thumbnails_count >= 2:  # 只生成前两张
+                    break
+                
+                # 检查缩略图是否已存在
+                cache_dir = self.get_cache_dir(image_path)
+                file_hash = self.get_file_hash(image_path)
+                thumbnail_path = os.path.join(cache_dir, f"thumb_{file_hash}.jpg")
+                
+                if not os.path.exists(thumbnail_path):
+                    # 同步生成缩略图
+                    print(f"同步生成缩略图: {image_path}")
+                    thumbnail_path = self.generate_thumbnail(image_path)
+                    # 更新images中的thumbnail_path
+                    for img in images:
+                        if img['file_path'] == image_path:
+                            img['thumbnail_path'] = thumbnail_path
+                            initial_thumbnails_count += 1
+                            break
+            
+            # 第三阶段：将剩余的缩略图和所有预览图任务加入队列（异步）
+            for image_path in image_paths:
+                # 检查并添加缩略图任务（如果不存在）
+                cache_dir = self.get_cache_dir(image_path)
+                file_hash = self.get_file_hash(image_path)
+                thumbnail_path = os.path.join(cache_dir, f"thumb_{file_hash}.jpg")
+                preview_path = os.path.join(cache_dir, f"preview_{file_hash}.jpg")
+                
+                if not os.path.exists(thumbnail_path):
+                    self.cache_queue.put({'type': 'thumbnail', 'file_path': image_path})
+                
+                if not os.path.exists(preview_path):
+                    self.cache_queue.put({'type': 'preview', 'file_path': image_path})
         except PermissionError:
             print(f"权限不足，无法访问目录: {directory}")
         except Exception as e:

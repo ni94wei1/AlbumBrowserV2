@@ -1,0 +1,98 @@
+{
+  "D:\\python测试\\相册管理工具2.0\\temp_test_image.jpg": {
+    "rating": 0,
+    "timestamp": "2025-09-16T17:42:55.425989",
+    "filename": "temp_test_image.jpg",
+    "directory": ""
+  },
+  "E:\\测试目录\\1\\653A7189.jpg": {
+    "rating": 2,
+    "timestamp": "2025-09-17T11:47:15.684929",
+    "filename": "653A7189.jpg",
+    "directory": "E:\\测试目录\\1"
+  },
+  "E:\\测试目录\\1\\653A7194.jpg": {
+    "rating": 1,
+    "timestamp": "2025-09-17T11:47:15.717098",
+    "filename": "653A7194.jpg",
+    "directory": "E:\\测试目录\\1"
+  },
+  "E:\\测试目录\\1\\653A7197.jpg": {
+    "rating": 1,
+    "timestamp": "2025-09-17T11:47:15.731787",
+    "filename": "653A7197.jpg",
+    "directory": "E:\\测试目录\\1"
+  },
+  "E:\\测试目录\\阿渊中央公园_PixCake\\DSC_4791.jpg": {
+    "rating": 3,
+    "timestamp": "2025-09-17T11:47:17.522920",
+    "filename": "DSC_4791.jpg",
+    "directory": "E:\\测试目录\\阿渊中央公园_PixCake"
+  },
+  "E:\\测试目录\\阿渊中央公园_PixCake\\DSC_4945.jpg": {
+    "rating": 3,
+    "timestamp": "2025-09-17T11:47:17.535491",
+    "filename": "DSC_4945.jpg",
+    "directory": "E:\\测试目录\\阿渊中央公园_PixCake"
+  },
+  "E:\\测试目录\\阿渊中央公园_PixCake\\DSC_4949.jpg": {
+    "rating": 3,
+    "timestamp": "2025-09-17T11:47:17.547743",
+    "filename": "DSC_4949.jpg",
+    "directory": "E:\\测试目录\\阿渊中央公园_PixCake"
+  },
+  "E:\\测试目录\\阿渊中央公园_PixCake\\DSC_5178.jpg": {
+    "rating": 3,
+    "timestamp": "2025-09-17T11:47:17.559646",
+    "filename": "DSC_5178.jpg",
+    "directory": "E:\\测试目录\\阿渊中央公园_PixCake"
+  },
+  "E:\\测试目录\\阿渊中央公园_PixCake\\DSC_5185.jpg": {
+    "rating": 3,
+    "timestamp": "2025-09-17T11:47:17.571231",
+    "filename": "DSC_5185.jpg",
+    "directory": "E:\\测试目录\\阿渊中央公园_PixCake"
+  },
+  "E:\\测试目录\\阿渊中央公园_PixCake\\DSC_5219.jpg": {
+    "rating": 3,
+    "timestamp": "2025-09-17T11:47:17.584104",
+    "filename": "DSC_5219.jpg",
+    "directory": "E:\\测试目录\\阿渊中央公园_PixCake"
+  },
+  "E:\\测试目录\\阿渊中央公园_PixCake\\DSC_5226.jpg": {
+    "rating": 3,
+    "timestamp": "2025-09-17T11:47:17.594368",
+    "filename": "DSC_5226.jpg",
+    "directory": "E:\\测试目录\\阿渊中央公园_PixCake"
+  },
+  "E:\\测试目录\\阿渊中央公园_PixCake\\DSC_5236.jpg": {
+    "rating": 3,
+    "timestamp": "2025-09-17T11:47:17.606679",
+    "filename": "DSC_5236.jpg",
+    "directory": "E:\\测试目录\\阿渊中央公园_PixCake"
+  },
+  "E:\\测试目录\\阿渊中央公园_PixCake\\DSC_5316.jpg": {
+    "rating": 3,
+    "timestamp": "2025-09-17T11:47:17.619264",
+    "filename": "DSC_5316.jpg",
+    "directory": "E:\\测试目录\\阿渊中央公园_PixCake"
+  },
+  "E:\\测试目录\\3\\wallhaven-wq56px.jpg": {
+    "rating": 2,
+    "timestamp": "2025-09-17T11:48:59.350768",
+    "filename": "wallhaven-wq56px.jpg",
+    "directory": "E:\\测试目录\\3"
+  },
+  "E:\\测试目录\\3\\5\\wallhaven-jxqrmp.jpg": {
+    "rating": 2,
+    "timestamp": "2025-09-17T11:49:13.806525",
+    "filename": "wallhaven-jxqrmp.jpg",
+    "directory": "E:\\测试目录\\3\\5"
+  },
+  "E:\\测试目录\\3\\5\\1b38c774-d231-4583-ac0e-4bf84263426e.png": {
+    "rating": 2,
+    "timestamp": "2025-09-17T11:49:27.331791",
+    "filename": "1b38c774-d231-4583-ac0e-4bf84263426e.png",
+    "directory": "E:\\测试目录\\3\\5"
+  }
+}

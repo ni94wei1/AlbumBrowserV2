@@ -275,7 +275,11 @@ def get_thumbnail():
 
 @app.route('/api/image/preview')
 def get_preview():
-    """获取预览大图"""
+    """获取预览大图
+    
+    如果预览图不存在，会将其添加到优先级队列中优先处理
+    返回正在生成状态，让客户端可以稍后重试
+    """
     file_path = request.args.get('file_path')
     if not file_path:
         return jsonify({'error': '缺少文件路径参数'}), 400
@@ -291,12 +295,24 @@ def get_preview():
     if not file_accessible:
         return jsonify({'error': '无权访问此文件'}), 403
     
-    # 生成或获取预览图
-    preview_path = image_processor.generate_preview(file_path)
-    if preview_path and os.path.exists(preview_path):
+    # 首先检查预览图是否已存在
+    cache_dir = image_processor.get_cache_dir(file_path)
+    file_hash = image_processor.get_file_hash(file_path)
+    preview_path = os.path.join(cache_dir, f"preview_{file_hash}.jpg")
+    
+    if os.path.exists(preview_path):
+        # 预览图已存在，直接返回
         return send_file(preview_path, mimetype='image/jpeg')
     else:
-        return jsonify({'error': '预览图不存在'}), 404
+        # 预览图不存在，将其添加到优先级队列中优先处理
+        success = image_processor.prioritize_preview(file_path)
+        
+        if success:
+            # 返回正在生成状态，客户端可以稍后重试
+            return jsonify({'status': 'generating', 'message': '预览图正在生成中，请稍候重试'}), 202
+        else:
+            # 优先处理失败，返回错误
+            return jsonify({'error': '预览图生成失败'}), 500
 
 @app.route('/api/image/download')
 @login_required
