@@ -6,6 +6,8 @@ import os
 import tempfile
 import threading
 import queue
+import subprocess
+from pathlib import Path
 from PIL import Image, ExifTags, ImageDraw, ImageFont
 from PIL.ExifTags import TAGS
 import exifread
@@ -24,108 +26,47 @@ except ImportError:
     WIN32_AVAILABLE = False
     print("警告: pywin32未安装，Windows星级评分功能将被禁用")
 
-# 图片星级评分管理系统
-class ImageRatingSystem:
-    """图片星级评分管理系统"""
-    
-    _instance = None
-    
-    def __new__(cls, db_path="ratings_db.json"):
-        """单例模式实现"""
-        if cls._instance is None:
-            cls._instance = super(ImageRatingSystem, cls).__new__(cls)
-            cls._instance._init(db_path)
-        return cls._instance
-    
-    def _init(self, db_path):
-        """初始化评分系统"""
-        self.db_path = db_path
-        self.ratings_db = {}
-        self._load_database()
-    
-    def _load_database(self):
-        """从文件加载评分数据库"""
-        try:
-            if os.path.exists(self.db_path):
-                with open(self.db_path, 'r', encoding='utf-8') as f:
-                    self.ratings_db = json.load(f)
-                print(f"成功加载评分数据库，共包含 {len(self.ratings_db)} 条评分记录")
-            else:
-                print(f"评分数据库文件不存在，将创建新文件: {self.db_path}")
-                self._save_database()
-        except Exception as e:
-            print(f"加载评分数据库失败: {e}")
-            self.ratings_db = {}
-    
-    def _save_database(self):
-        """保存评分数据库到文件"""
-        try:
-            with open(self.db_path, 'w', encoding='utf-8') as f:
-                json.dump(self.ratings_db, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"保存评分数据库失败: {e}")
-    
-    def _get_file_key(self, file_path):
-        """获取文件的唯一标识键"""
-        # 使用绝对路径作为键，确保唯一性
-        return os.path.abspath(file_path)
-    
-    def get_rating(self, file_path):
-        """获取图片的星级评分"""
-        file_key = self._get_file_key(file_path)
-        if file_key in self.ratings_db:
-            rating_info = self.ratings_db[file_key]
-            return rating_info.get('rating', 0)
+# 使用exiftool实现的星级评分函数
+def get_rating(file_path: str) -> int:
+    """使用exiftool获取图片的星级评分"""
+    try:
+        result = subprocess.run(
+            ["exiftool", "-Rating", "-s3", str(file_path)],
+            capture_output=True, text=True, encoding="mbcs", errors="ignore"
+        )
+        if result.returncode != 0:
+            print(f"读取评级失败: {result.stderr.strip()}")
+            return 0
+        rating_str = result.stdout.strip()
+        return int(rating_str) if rating_str.isdigit() else 0
+    except Exception as e:
+        print(f"获取星级评分出错: {e}")
         return 0
-    
-    def set_rating(self, file_path, rating):
-        """设置图片的星级评分"""
-        # 验证参数
-        if not isinstance(rating, int) or rating < 0 or rating > 5:
-            print(f"错误: 无效的星级评分 (必须是0-5之间的整数) - {rating}")
+
+def set_rating(file_path: str, stars: int) -> bool:
+    """使用exiftool设置图片的星级评分"""
+    try:
+        if stars < 0 or stars > 5:
+            print(f"错误: 无效的星级评分 (必须是0-5之间的整数) - {stars}")
             return False
         
         if not os.path.exists(file_path):
             print(f"错误: 文件不存在 - {file_path}")
             return False
         
-        try:
-            file_key = self._get_file_key(file_path)
-            timestamp = datetime.now().isoformat()
-            
-            # 存储评分信息，包括评分值、时间戳和文件基本信息
-            self.ratings_db[file_key] = {
-                'rating': rating,
-                'timestamp': timestamp,
-                'filename': os.path.basename(file_path),
-                'directory': os.path.dirname(file_path)
-            }
-            
-            # 保存数据库
-            self._save_database()
-            
-            print(f"成功设置评分: {rating}星 到文件: {file_path}")
-            return True
-        except Exception as e:
-            print(f"设置评分失败: {e}")
+        result = subprocess.run(
+            ["exiftool", f"-Rating={stars}", "-overwrite_original", str(file_path)],
+            capture_output=True, text=True, encoding="mbcs", errors="ignore"
+        )
+        if result.returncode != 0:
+            print(f"写入评级失败: {result.stderr.strip()}")
             return False
-    
-    def remove_rating(self, file_path):
-        """移除图片的星级评分"""
-        try:
-            file_key = self._get_file_key(file_path)
-            if file_key in self.ratings_db:
-                del self.ratings_db[file_key]
-                self._save_database()
-                print(f"成功移除文件的评分: {file_path}")
-                return True
-            return False
-        except Exception as e:
-            print(f"移除评分失败: {e}")
-            return False
-
-# 创建全局评分系统实例
-rating_system = ImageRatingSystem()
+        
+        print(f"成功设置评分: {stars}星 到文件: {file_path}")
+        return True
+    except Exception as e:
+        print(f"设置评分失败: {e}")
+        return False
 
 class ImageProcessor:
     def __init__(self, config):
@@ -868,81 +809,17 @@ class ImageProcessor:
     def get_windows_rating(self, file_path: str) -> int:
         """获取图片星级评分
         
-        这个方法会：
-        1. 首先尝试从内部评分系统获取评分
-        2. 如果内部评分系统没有记录，则尝试使用Windows COM接口获取评分
-        3. 如果所有方法都失败，则返回0
+        使用exiftool直接从图片文件中读取星级评分
         """
         try:
             if not os.path.exists(file_path):
                 print(f"错误: 文件不存在 - {file_path}")
                 return 0
             
-            # 1. 首先从内部评分系统获取评分
-            internal_rating = rating_system.get_rating(file_path)
-            if internal_rating != 0:
-                print(f"从内部评分系统获取评分: {internal_rating} 对于文件: {file_path}")
-                return internal_rating
-            
-            # 2. 如果内部评分系统没有记录，尝试使用Windows COM接口获取评分
-            if WIN32_AVAILABLE:
-                try:
-                    from win32com.client import Dispatch
-                    import re
-                    
-                    # 创建Shell对象用于访问文件属性
-                    shell = Dispatch("Shell.Application")
-                    
-                    # 获取文件所在目录的Folder对象
-                    folder_path = os.path.dirname(file_path)
-                    file_name = os.path.basename(file_path)
-                    
-                    folder = shell.NameSpace(folder_path)
-                    if folder:
-                        # 查找文件项
-                        item = folder.ParseName(file_name)
-                        if not item:
-                            # 如果ParseName失败，尝试遍历查找
-                            for i in range(0, folder.Items().Count):
-                                current_item = folder.Items().Item(i)
-                                if current_item.Name == file_name:
-                                    item = current_item
-                                    break
-                        
-                        if item:
-                            # 获取星级评分 (索引19)
-                            rating_text = folder.GetDetailsOf(item, 19)
-                            
-                            # 解析"X 星级"格式的评分
-                            if rating_text and "星级" in rating_text:
-                                # 提取数字部分
-                                match = re.search(r'(\d+)', rating_text)
-                                if match:
-                                    star_count = int(match.group(1))
-                                    # 将Windows评分同步到内部评分系统
-                                    rating_system.set_rating(file_path, star_count)
-                                    print(f"从Windows获取评分: {star_count} 对于文件: {file_path}")
-                                    return star_count
-                            
-                            # 如果索引19失败，尝试其他常见索引
-                            rating_indexes = [18, 27, 165, 166]
-                            for idx in rating_indexes:
-                                if idx != 19:  # 已经检查过索引19了
-                                    rating_text = folder.GetDetailsOf(item, idx)
-                                    if rating_text and ('★' in rating_text or rating_text.isdigit()):
-                                        if '★' in rating_text:
-                                            star_count = rating_text.count('★')
-                                        else:
-                                            star_count = int(rating_text)
-                                        # 将Windows评分同步到内部评分系统
-                                        rating_system.set_rating(file_path, star_count)
-                                        print(f"从Windows获取评分: {star_count} 对于文件: {file_path}")
-                                        return star_count
-                except Exception as e:
-                    print(f"Windows COM接口获取星级评分失败: {e}")
-            
-            # 3. 如果所有方法都失败，返回0
-            return 0
+            # 直接使用exiftool获取评分
+            rating_value = get_rating(file_path)
+            print(f"从文件获取评分: {rating_value} 对于文件: {file_path}")
+            return rating_value
         except Exception as e:
             print(f"获取星级评分时出错: {e}")
             return 0
@@ -950,10 +827,8 @@ class ImageProcessor:
     def set_windows_rating(self, file_path: str, rating: int) -> bool:
         """设置图片星级评分
         
-        这个方法会：
-        1. 首先尝试使用Windows COM接口设置星级评分
-        2. 如果Windows方法失败或不支持，则使用内部评分系统
-        3. 无论哪种方式，都会更新元数据缓存
+        使用exiftool直接将星级评分写入图片文件
+        并同步更新缓存目录中的meta_xx.json文件
         """
         try:
             # 验证参数
@@ -965,43 +840,10 @@ class ImageProcessor:
                 print(f"错误: 文件不存在 - {file_path}")
                 return False
             
-            # 标志变量，跟踪是否成功设置了评分
-            rating_set = False
+            # 使用exiftool设置评分到原图
+            rating_set = set_rating(file_path, rating)
             
-            # 1. 尝试使用Windows COM接口设置星级
-            if WIN32_AVAILABLE:
-                try:
-                    from win32com.client import Dispatch
-                    
-                    # 创建Shell对象
-                    shell = Dispatch("Shell.Application")
-                    
-                    # 获取文件所在目录和文件名
-                    folder_path = os.path.dirname(file_path)
-                    file_name = os.path.basename(file_path)
-                    
-                    # 获取文件夹对象
-                    folder = shell.NameSpace(folder_path)
-                    if folder:
-                        # 查找文件项
-                        item = folder.ParseName(file_name)
-                        if item:
-                            # 尝试使用不同的方法设置星级
-                            # 注意：在现代Windows系统中，直接设置星级受到限制
-                            print(f"尝试使用Windows COM接口设置星级: {rating} 到文件: {file_path}")
-                            
-                            # 这里我们使用内部评分系统作为主要方法
-                            # 因为直接通过COM接口设置Windows星级在现代系统中受到限制
-                            # 我们保留这个代码作为兼容性尝试
-                            
-                except Exception as e:
-                    print(f"Windows COM接口设置星级失败: {e}")
-            
-            # 2. 使用我们的内部评分系统（主要方法）
-            if not rating_set:
-                rating_set = rating_system.set_rating(file_path, rating)
-            
-            # 3. 更新元数据缓存
+            # 更新元数据缓存
             if rating_set:
                 try:
                     cache_dir = self.get_cache_dir(file_path)

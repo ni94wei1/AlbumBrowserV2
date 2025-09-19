@@ -713,6 +713,12 @@ function resetStarHover() {
 
 async function setImageRating(filePath, rating) {
     try {
+        // 立即更新页面显示和本地数据，不等服务端响应
+        updateStarRating(rating);
+        // 更新当前图片的评分
+        currentImages[currentImageIndex].metadata.rating = rating;
+        
+        // 然后异步发送请求到服务端
         const response = await fetch('/api/image/rating', {
             method: 'POST',
             headers: {
@@ -724,13 +730,12 @@ async function setImageRating(filePath, rating) {
             })
         });
         
-        if (response.ok) {
-            updateStarRating(rating);
-            // 更新当前图片的评分
-            currentImages[currentImageIndex].metadata.rating = rating;
+        // 如果服务端返回失败，可以在这里添加错误处理逻辑
+        if (!response.ok) {
+            console.error('服务端设置星级失败，但本地已更新');
         }
     } catch (error) {
-        console.error('设置星级失败:', error);
+        console.error('设置星级过程中发生错误，但本地已更新:', error);
     }
 }
 
