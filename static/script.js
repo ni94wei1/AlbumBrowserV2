@@ -572,6 +572,11 @@ function createImageItem(image, index) {
     const checkboxContainer = document.createElement('div');
     checkboxContainer.className = 'image-select-checkbox';
     
+    // 添加对勾图标
+    const checkboxIcon = document.createElement('i');
+    checkboxIcon.className = 'fas fa-check';
+    checkboxContainer.appendChild(checkboxIcon);
+    
     imageItem.appendChild(img);
     imageItem.appendChild(checkboxContainer);
     
@@ -1531,6 +1536,11 @@ function createRecycleBinItem(item, index) {
     // 创建选择框容器
     const checkboxContainer = document.createElement('div');
     checkboxContainer.className = 'image-select-checkbox';
+    
+    // 添加对勾图标
+    const checkboxIcon = document.createElement('i');
+    checkboxIcon.className = 'fas fa-check';
+    checkboxContainer.appendChild(checkboxIcon);
     
     // 创建删除时间信息
     const deleteTime = document.createElement('div');

@@ -92,6 +92,11 @@
 .image-select-checkbox i {
     color: white;
     font-size: 14px;
+    display: none;
+}
+
+.image-item.selected .image-select-checkbox i {
+    display: block;
 }
 
 /* 删除确认对话框样式 */
