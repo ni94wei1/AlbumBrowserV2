@@ -701,7 +701,13 @@ function positionItem(element, img) {
         // 根据图片比例计算高度
         const aspectRatio = img.naturalHeight / img.naturalWidth;
         const imageHeight = itemWidth * aspectRatio;
-        const infoHeight = element.querySelector('.image-info') ? 50 : 0;
+        
+        // 检查是否有普通信息元素或回收站信息元素
+        const hasImageInfo = element.querySelector('.image-info') !== null;
+        const hasRecycleInfo = element.querySelector('.recycle-bin-info') !== null;
+        
+        // 根据元素类型添加不同的信息高度
+        const infoHeight = hasImageInfo ? 50 : (hasRecycleInfo ? 30 : 0);
         itemHeight = imageHeight + infoHeight;
     } else if (element.classList.contains('folder-item')) {
         // 计算文件夹项目的实际高度
@@ -737,6 +743,19 @@ async function layoutWaterfall() {
 function navigateToSubdirectory(path) {
     currentDirectory = path;
     currentPage = 1;
+    
+    // 清除选择状态
+    if (isSelectionMode) {
+        toggleSelectionMode();
+    } else {
+        clearSelection();
+    }
+    
+    // 如果在回收站模式下，退出回收站模式
+    if (isRecycleBinMode) {
+        toggleRecycleBinMode();
+    }
+    
     loadImages();
 }
 
@@ -776,7 +795,16 @@ function updateBreadcrumb() {
     const rootItem = document.createElement('span');
     rootItem.className = 'breadcrumb-item clickable';
     rootItem.textContent = '根目录';
-    rootItem.onclick = () => navigateToSubdirectory(rootDir);
+    rootItem.onclick = () => {
+        // 确保在点击根目录时清除选择状态并退出回收站模式
+        if (isSelectionMode) {
+            toggleSelectionMode();
+        }
+        if (isRecycleBinMode) {
+            toggleRecycleBinMode();
+        }
+        navigateToSubdirectory(rootDir);
+    };
     breadcrumb.appendChild(rootItem);
     
     if (displayPath) {
