@@ -263,7 +263,9 @@ def get_thumbnail():
     accessible_dirs = config.get_user_accessible_dirs(username)
     file_accessible = any(file_path.startswith(dir_path) for dir_path in accessible_dirs)
     
-    if not file_accessible:
+    # 检查是否在回收站中
+    recycle_bin = config.config.get('recycle_bin', 'recycle_bin')
+    if not file_accessible and not file_path.startswith(recycle_bin):
         return jsonify({'error': '无权访问此文件'}), 403
     
     # 生成或获取缩略图
@@ -292,7 +294,9 @@ def get_preview():
     accessible_dirs = config.get_user_accessible_dirs(username)
     file_accessible = any(file_path.startswith(dir_path) for dir_path in accessible_dirs)
     
-    if not file_accessible:
+    # 检查是否在回收站中
+    recycle_bin = config.config.get('recycle_bin', 'recycle_bin')
+    if not file_accessible and not file_path.startswith(recycle_bin):
         return jsonify({'error': '无权访问此文件'}), 403
     
     # 首先检查预览图是否已存在
@@ -453,6 +457,364 @@ def clean_thumbnails():
         return jsonify({'success': True, 'message': '所有缩略图已清理完成'})
     except Exception as e:
         return jsonify({'error': f'清理缩略图失败: {str(e)}'}), 500
+
+@app.route('/api/delete', methods=['POST'])
+@login_required
+def delete_files():
+    """批量删除文件"""
+    username = session['username']
+    user_info = config.config['users'][username]
+    
+    # 检查是否有权限删除文件
+    # 只有管理员和具有删除权限的用户才能删除文件
+    if user_info.get('role') != 'admin' and not user_info.get('can_delete', False):
+        return jsonify({'error': '没有删除权限'}), 403
+    
+    data = request.get_json()
+    file_paths = data.get('file_paths', [])
+    delete_type = data.get('delete_type', 'recycle_bin')  # recycle_bin 或 permanent
+    
+    if not file_paths:
+        return jsonify({'error': '请选择要删除的文件'}), 400
+    
+    # 检查文件是否在用户可访问的目录中
+    accessible_dirs = config.get_user_accessible_dirs(username)
+    
+    # 记录删除成功和失败的文件
+    success_count = 0
+    failed_files = []
+    
+    for file_path in file_paths:
+        # 检查文件是否在用户可访问的目录中
+        file_accessible = False
+        for dir_path in accessible_dirs:
+            if file_path.startswith(dir_path):
+                file_accessible = True
+                break
+        
+        if not file_accessible:
+            failed_files.append({
+                'file_path': file_path,
+                'error': '无权访问此文件'
+            })
+            continue
+        
+        if not os.path.exists(file_path):
+            failed_files.append({
+                'file_path': file_path,
+                'error': '文件不存在'
+            })
+            continue
+        
+        try:
+            if delete_type == 'permanent':
+                # 永久删除文件
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    # 同时删除相关的缓存文件
+                    cache_dir = image_processor.get_cache_dir(file_path)
+                    file_hash = image_processor.get_file_hash(file_path)
+                    
+                    # 删除缩略图缓存
+                    thumbnail_path = os.path.join(cache_dir, f"thumbnail_{file_hash}.jpg")
+                    if os.path.exists(thumbnail_path):
+                        os.remove(thumbnail_path)
+                    
+                    # 删除预览图缓存
+                    preview_path = os.path.join(cache_dir, f"preview_{file_hash}.jpg")
+                    if os.path.exists(preview_path):
+                        os.remove(preview_path)
+                    
+                    # 删除元数据缓存
+                    metadata_path = os.path.join(cache_dir, f"meta_{file_hash}.json")
+                    if os.path.exists(metadata_path):
+                        os.remove(metadata_path)
+                    
+                success_count += 1
+            else:
+                # 放入回收站（在原目录下的.recycle子目录中）
+                if os.path.isfile(file_path):
+                    # 获取原文件所在目录
+                    file_dir = os.path.dirname(file_path)
+                    # 构建.recycle目录路径
+                    recycle_dir = os.path.join(file_dir, '.recycle')
+                    os.makedirs(recycle_dir, exist_ok=True)
+                    
+                    # 构建目标文件路径，避免文件名冲突
+                    base_name = os.path.basename(file_path)
+                    file_name, file_ext = os.path.splitext(base_name)
+                    target_path = os.path.join(recycle_dir, base_name)
+                    
+                    # 如果文件已存在，添加时间戳后缀
+                    counter = 1
+                    while os.path.exists(target_path):
+                        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                        target_path = os.path.join(recycle_dir, f"{file_name}_{timestamp}_{counter}{file_ext}")
+                        counter += 1
+                    
+                    # 移动文件到回收站
+                    shutil.move(file_path, target_path)
+                    
+                    # 删除相关的缓存文件
+                    cache_dir = image_processor.get_cache_dir(file_path)
+                    file_hash = image_processor.get_file_hash(file_path)
+                    
+                    # 删除缩略图缓存
+                    thumbnail_path = os.path.join(cache_dir, f"thumbnail_{file_hash}.jpg")
+                    if os.path.exists(thumbnail_path):
+                        os.remove(thumbnail_path)
+                    
+                    # 删除预览图缓存
+                    preview_path = os.path.join(cache_dir, f"preview_{file_hash}.jpg")
+                    if os.path.exists(preview_path):
+                        os.remove(preview_path)
+                    
+                    # 删除元数据缓存
+                    metadata_path = os.path.join(cache_dir, f"meta_{file_hash}.json")
+                    if os.path.exists(metadata_path):
+                        os.remove(metadata_path)
+                    
+                success_count += 1
+        except Exception as e:
+            failed_files.append({
+                'file_path': file_path,
+                'error': str(e)
+            })
+    
+    # 清理空文件夹（可选）
+    for dir_path in accessible_dirs:
+        if os.path.exists(dir_path):
+            for root, dirs, files in os.walk(dir_path, topdown=False):
+                for name in dirs:
+                    try:
+                        os.rmdir(os.path.join(root, name))
+                    except:
+                        pass
+    
+    return jsonify({
+        'success': True,
+        'total': len(file_paths),
+        'success_count': success_count,
+        'failed_count': len(failed_files),
+        'failed_files': failed_files
+    })
+
+@app.route('/api/recycle-bin')
+@login_required
+def get_recycle_bin():
+    """获取回收站内容"""
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 50))
+    sort_by = request.args.get('sort_by', 'deleted_time')  # name, deleted_time
+    sort_order = request.args.get('sort_order', 'desc')  # asc, desc
+    
+    # 获取用户可访问的目录
+    username = session['username']
+    accessible_dirs = config.get_user_accessible_dirs(username)
+    
+    # 扫描所有可访问目录下的.recycle子目录
+    recycle_items = []
+    try:
+        for root_dir in accessible_dirs:
+            if os.path.exists(root_dir):
+                # 遍历root_dir下的所有目录
+                for dirpath, _, filenames in os.walk(root_dir):
+                    # 检查是否是.recycle目录
+                    if os.path.basename(dirpath) == '.recycle':
+                        # 获取此.recycle目录对应的原始目录
+                        original_dir = os.path.dirname(dirpath)
+                        
+                        for filename in filenames:
+                            file_path = os.path.join(dirpath, filename)
+                            if os.path.isfile(file_path):
+                                # 尝试从文件名中提取原始信息（如果文件名包含时间戳）
+                                original_filename = filename
+                                
+                                # 获取文件的修改时间（这里用来表示删除时间）
+                                deleted_time = int(os.path.getmtime(file_path))
+                                
+                                # 获取文件大小
+                                file_size = os.path.getsize(file_path)
+                                
+                                # 创建文件项
+                                recycle_items.append({
+                                    'recycle_path': file_path,
+                                    'original_filename': original_filename,
+                                    'deleted_time': deleted_time,
+                                    'file_size': file_size,
+                                    'original_dir': original_dir
+                                })
+    except Exception as e:
+        print(f"扫描回收站失败: {e}")
+    
+    # 排序
+    if sort_by == 'name':
+        recycle_items.sort(key=lambda x: x['original_filename'], reverse=(sort_order == 'desc'))
+    elif sort_by == 'deleted_time':
+        recycle_items.sort(key=lambda x: x['deleted_time'], reverse=(sort_order == 'desc'))
+    elif sort_by == 'size':
+        recycle_items.sort(key=lambda x: x['file_size'], reverse=(sort_order == 'desc'))
+    
+    # 分页
+    total = len(recycle_items)
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_items = recycle_items[start:end]
+    
+    return jsonify({
+        'items': paginated_items,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': (total + per_page - 1) // per_page
+    })
+
+@app.route('/api/recycle-bin/restore', methods=['POST'])
+@login_required
+def restore_recycle_bin_items():
+    """还原回收站中的文件"""
+    username = session['username']
+    user_info = config.config['users'][username]
+    
+    # 只有管理员和具有删除权限的用户才能还原文件
+    if user_info.get('role') != 'admin' and not user_info.get('can_delete', False):
+        return jsonify({'error': '没有还原权限'}), 403
+    
+    data = request.get_json()
+    file_paths = data.get('file_paths', [])
+    original_dirs = data.get('original_dirs', [])  # 从前端接收原始目录信息
+    
+    if not file_paths:
+        return jsonify({'error': '请选择要还原的文件'}), 400
+    
+    # 记录还原成功和失败的文件
+    success_count = 0
+    failed_files = []
+    
+    for i, file_path in enumerate(file_paths):
+        # 检查文件是否在.recycle目录中
+        if '.recycle' not in file_path:
+            failed_files.append({
+                'file_path': file_path,
+                'error': '文件不在回收站中'
+            })
+            continue
+        
+        if not os.path.exists(file_path):
+            failed_files.append({
+                'file_path': file_path,
+                'error': '文件不存在'
+            })
+            continue
+        
+        try:
+            # 获取文件名
+            filename = os.path.basename(file_path)
+            
+            # 确定原始目录 - 优先使用前端传递的original_dirs
+            # 如果前端没有传递或索引超出范围，则从路径中解析
+            original_dir = ''
+            if i < len(original_dirs) and original_dirs[i]:
+                original_dir = original_dirs[i]
+            else:
+                # 从文件路径中提取原始目录（.recycle的父目录）
+                recycle_dir = os.path.dirname(file_path)
+                if os.path.basename(recycle_dir) == '.recycle':
+                    original_dir = os.path.dirname(recycle_dir)
+            
+            if not original_dir:
+                failed_files.append({
+                    'file_path': file_path,
+                    'error': '无法确定原始目录'
+                })
+                continue
+            
+            # 检查原始目录是否在用户可访问的目录中
+            accessible_dirs = config.get_user_accessible_dirs(username)
+            dir_accessible = False
+            for dir_path in accessible_dirs:
+                if original_dir.startswith(dir_path):
+                    dir_accessible = True
+                    break
+            
+            if not dir_accessible:
+                failed_files.append({
+                    'file_path': file_path,
+                    'error': '无权限访问原始目录'
+                })
+                continue
+            
+            # 构建目标路径
+            target_path = os.path.join(original_dir, filename)
+            
+            # 如果目标路径已存在同名文件，添加时间戳后缀
+            if os.path.exists(target_path):
+                file_name, file_ext = os.path.splitext(filename)
+                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                target_path = os.path.join(original_dir, f"{file_name}_{timestamp}{file_ext}")
+            
+            # 移动文件到目标位置
+            shutil.move(file_path, target_path)
+            success_count += 1
+        except Exception as e:
+            failed_files.append({
+                'file_path': file_path,
+                'error': str(e)
+            })
+    
+    return jsonify({
+        'success': True,
+        'total': len(file_paths),
+        'success_count': success_count,
+        'failed_count': len(failed_files),
+        'failed_files': failed_files
+    })
+
+@app.route('/api/recycle-bin/empty', methods=['POST'])
+@login_required
+def empty_recycle_bin():
+    """清空回收站"""
+    username = session['username']
+    user_info = config.config['users'][username]
+    
+    # 只有管理员才能清空回收站
+    if user_info.get('role') != 'admin':
+        return jsonify({'error': '需要管理员权限'}), 403
+    
+    # 获取用户可访问的目录
+    accessible_dirs = config.get_user_accessible_dirs(username)
+    
+    # 记录删除成功和失败的文件
+    success_count = 0
+    failed_files = []
+    
+    try:
+        for root_dir in accessible_dirs:
+            if os.path.exists(root_dir):
+                # 遍历root_dir下的所有目录
+                for dirpath, _, filenames in os.walk(root_dir):
+                    # 检查是否是.recycle目录
+                    if os.path.basename(dirpath) == '.recycle':
+                        for filename in filenames:
+                            file_path = os.path.join(dirpath, filename)
+                            if os.path.isfile(file_path):
+                                try:
+                                    os.remove(file_path)
+                                    success_count += 1
+                                except Exception as e:
+                                    failed_files.append({
+                                        'file_path': file_path,
+                                        'error': str(e)
+                                    })
+    except Exception as e:
+        return jsonify({'error': f'清空回收站失败: {str(e)}'}), 500
+    
+    return jsonify({
+        'success': True,
+        'success_count': success_count,
+        'failed_count': len(failed_files),
+        'failed_files': failed_files
+    })
 
 if __name__ == '__main__':
     # 创建模板目录

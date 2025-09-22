@@ -5,6 +5,235 @@
     box-sizing: border-box;
 }
 
+/* 选择模式相关样式 */
+.selection-count {
+    margin-left: 10px;
+    font-weight: bold;
+    color: #495057;
+}
+
+.batch-actions {
+    background-color: #fff;
+    border-top: 1px solid #dee2e6;
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    bottom: 0;
+    z-index: 100;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.batch-actions.hidden {
+    display: none;
+}
+
+.batch-selection-info {
+    font-weight: bold;
+    color: #495057;
+}
+
+.batch-actions-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+/* 图片项选择样式 */
+.image-item {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.image-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.image-item.selected {
+    border: 3px solid #007bff;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+    animation: selection-pulse 1s ease-in-out;
+}
+
+@keyframes selection-pulse {
+    0% {
+        box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+    }
+    50% {
+        box-shadow: 0 0 0 6px rgba(0, 123, 255, 0.25);
+    }
+    100% {
+        box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+    }
+}
+
+.image-select-checkbox {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 24px;
+    height: 24px;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: 2px solid #dee2e6;
+    border-radius: 4px;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    z-index: 20;
+    transition: all 0.2s;
+}
+
+.image-item.selected .image-select-checkbox {
+    background-color: #007bff;
+    border-color: #007bff;
+}
+
+.image-select-checkbox i {
+    color: white;
+    font-size: 14px;
+}
+
+/* 删除确认对话框样式 */
+.delete-confirm-dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.delete-confirm-dialog.hidden {
+    display: none;
+}
+
+.delete-confirm-content {
+    background-color: white;
+    border-radius: 8px;
+    padding: 30px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.delete-confirm-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.delete-confirm-header h3 {
+    margin: 0;
+    color: #dc3545;
+}
+
+.delete-confirm-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #6c757d;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.delete-confirm-close:hover {
+    background-color: #f8f9fa;
+}
+
+.delete-confirm-body {
+    margin-bottom: 20px;
+}
+
+.delete-type-options {
+    margin: 15px 0;
+}
+
+.delete-type-option {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.delete-type-option:hover {
+    background-color: #f8f9fa;
+    border-color: #007bff;
+}
+
+.delete-type-option input[type="radio"] {
+    margin-right: 10px;
+}
+
+.delete-type-option label {
+    cursor: pointer;
+    font-weight: normal;
+}
+
+.delete-confirm-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* 视图模式样式 */
+.image-grid.grid-view {
+    display: block;
+}
+
+.image-grid.list-view {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 20px;
+}
+
+.image-grid.list-view .image-item {
+    width: 100%;
+    display: flex;
+    position: relative !important;
+    left: 0 !important;
+    top: 0 !important;
+    height: 100px;
+    margin-bottom: 10px;
+}
+
+.image-grid.list-view .image-item img {
+    height: 100%;
+    width: auto;
+    max-width: 150px;
+    object-fit: cover;
+}
+
+.image-grid.list-view .image-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-left: 15px;
+    flex: 1;
+}
+
+.view-controls button.active {
+    background-color: #007bff;
+    color: white;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     background: #f8f9fa;
@@ -617,6 +846,55 @@ body {
     display: flex;
     flex-direction: column;
     gap: 10px;
+}
+
+/* 回收站相关样式 */
+.toolbar.recycle-bin-mode {
+    background-color: #f8f9fa;
+    border-top: 1px solid #ffc107;
+    border-bottom: 1px solid #ffc107;
+}
+
+.toolbar.recycle-bin-mode .sort-controls,
+.toolbar.recycle-bin-mode .thumbnail-size,
+.toolbar.recycle-bin-mode .view-controls {
+    opacity: 0.6;
+}
+
+.empty-recycle-bin {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    text-align: center;
+    color: #666;
+}
+
+.empty-recycle-bin i {
+    font-size: 72px;
+    margin-bottom: 20px;
+    color: #ffc107;
+    opacity: 0.5;
+}
+
+.empty-recycle-bin p {
+    font-size: 18px;
+    font-weight: 500;
+}
+
+.recycle-bin-info {
+    padding: 8px 12px;
+    font-size: 12px;
+    color: #666;
+    background-color: #fff8e1;
+    text-align: center;
+    border-top: 1px solid #ffeaa7;
+}
+
+/* 回收站项目特定样式 */
+.image-item.recycle-bin-item {
+    border-left: 4px solid #ffc107;
 }
 
 /* 管理员面板 */

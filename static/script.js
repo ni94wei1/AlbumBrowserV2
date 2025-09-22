@@ -9,6 +9,13 @@ let totalPages = 1;
 let currentImageIndex = 0;
 let currentZoom = 1;
 
+// 选择模式变量
+let isSelectionMode = false;
+let selectedImages = new Set();
+let originalClickHandlers = new Map();
+let isRecycleBinMode = false;
+let currentRecycleBinItems = [];
+
 // Pinterest瀑布流布局变量
 let columnHeights = [];
 let columnCount = 0;
@@ -36,10 +43,201 @@ const imageViewer = document.getElementById('imageViewer');
 const loginForm = document.getElementById('loginForm');
 const loginError = document.getElementById('loginError');
 const directorySelect = document.getElementById('directorySelect');
+const recycleBinBtn = document.getElementById('recycleBinBtn');
 const imageGrid = document.getElementById('imageGrid');
 const loadingSpinner = document.getElementById('loadingSpinner');
 const userInfo = document.getElementById('userInfo');
 const logoutBtn = document.getElementById('logoutBtn');
+const selectModeBtn = document.getElementById('selectModeBtn');
+const selectionCount = document.getElementById('selectionCount');
+const batchActions = document.getElementById('batchActions');
+const batchSelectionCount = document.getElementById('batchSelectionCount');
+const downloadSelectedBtn = document.getElementById('downloadSelectedBtn');
+const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+const deleteConfirmDialog = document.getElementById('deleteConfirmDialog');
+const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+const recycleBinConfirmDialog = document.getElementById('recycleBinConfirmDialog');
+const recycleBinConfirmMessage = document.getElementById('recycleBinConfirmMessage');
+const confirmRecycleBinBtn = document.getElementById('confirmRecycleBinBtn');
+const cancelRecycleBinBtn = document.getElementById('cancelRecycleBinBtn');
+const deleteImageBtn = document.getElementById('deleteImageBtn');
+
+// 选择模式功能函数
+function toggleSelectionMode() {
+    isSelectionMode = !isSelectionMode;
+    
+    if (isSelectionMode) {
+        selectModeBtn.innerHTML = '<i class="fas fa-times"></i> 取消选择';
+        selectModeBtn.classList.remove('btn-primary');
+        selectModeBtn.classList.add('btn-secondary');
+        selectionCount.classList.remove('hidden');
+        batchActions.classList.remove('hidden');
+        
+        // 为所有图片项添加选择框显示
+        const imageItems = document.querySelectorAll('.image-item');
+        imageItems.forEach(item => {
+            const checkbox = item.querySelector('.image-select-checkbox');
+            if (checkbox) {
+                checkbox.style.display = 'flex';
+            }
+        });
+        
+        // 添加Shift多选支持
+        let lastSelectedIndex = -1;
+        const handleSelectionClick = (e) => {
+            if (e.shiftKey && lastSelectedIndex !== -1 && isSelectionMode) {
+                const currentIndex = parseInt(e.currentTarget.dataset.index);
+                const startIndex = Math.min(lastSelectedIndex, currentIndex);
+                const endIndex = Math.max(lastSelectedIndex, currentIndex);
+                
+                const imageItems = document.querySelectorAll('.image-item');
+                for (let i = startIndex; i <= endIndex; i++) {
+                    selectImage(i, imageItems[i], true);
+                }
+            } else if (isSelectionMode) {
+                lastSelectedIndex = parseInt(e.currentTarget.dataset.index);
+            }
+        };
+        
+        document.querySelectorAll('.image-item').forEach(item => {
+            item.addEventListener('click', handleSelectionClick);
+        });
+    } else {
+        selectModeBtn.innerHTML = '<i class="fas fa-check-square"></i> 选择照片';
+        selectModeBtn.classList.remove('btn-secondary');
+        selectModeBtn.classList.add('btn-primary');
+        clearSelection();
+        selectionCount.classList.add('hidden');
+        batchActions.classList.add('hidden');
+        
+        // 隐藏所有选择框
+        const imageItems = document.querySelectorAll('.image-item');
+        imageItems.forEach(item => {
+            const checkbox = item.querySelector('.image-select-checkbox');
+            if (checkbox) {
+                checkbox.style.display = 'none';
+            }
+        });
+    }
+}
+
+function selectImage(index, imageItem, isMultiSelect = false) {
+    if (selectedImages.has(index)) {
+        // 如果已经选中且不是多选模式，则取消选中
+        if (!isMultiSelect) {
+            selectedImages.delete(index);
+            imageItem.classList.remove('selected');
+        }
+    } else {
+        // 如果未选中，则选中
+        selectedImages.add(index);
+        imageItem.classList.add('selected');
+    }
+    
+    updateSelectionCount();
+}
+
+function clearSelection() {
+    selectedImages.clear();
+    
+    // 移除所有选中状态
+    const imageItems = document.querySelectorAll('.image-item');
+    imageItems.forEach(item => {
+        item.classList.remove('selected');
+    });
+    
+    updateSelectionCount();
+}
+
+function updateSelectionCount() {
+    const count = selectedImages.size;
+    selectionCount.textContent = `已选择 ${count} 张`;
+    batchSelectionCount.textContent = `已选择 ${count} 张`;
+    
+    // 根据选择数量启用或禁用删除按钮
+    deleteSelectedBtn.disabled = count === 0;
+}
+
+function showDeleteConfirmDialog() {
+    if (selectedImages.size === 0) return;
+    
+    deleteConfirmDialog.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+
+function hideDeleteConfirmDialog() {
+    deleteConfirmDialog.classList.add('hidden');
+    document.body.style.overflow = 'auto';
+}
+
+async function confirmDelete() {
+    const selectedIndices = Array.from(selectedImages);
+    const filesToDelete = selectedIndices.map(index => currentImages[index].file_path);
+    
+    // 默认使用回收站模式
+    const deleteType = 'recycle_bin';
+    
+    try {
+        showLoading(true);
+        
+        // 发送删除请求到服务器
+        const response = await fetch('/api/delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                file_paths: filesToDelete,
+                delete_type: deleteType
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // 删除成功后重新加载当前页
+            await loadImages();
+            
+            // 退出选择模式
+            if (isSelectionMode) {
+                toggleSelectionMode();
+            }
+        } else {
+            alert('删除失败: ' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('删除过程中发生错误:', error);
+        alert('删除过程中发生网络错误，请稍后重试');
+    } finally {
+        hideDeleteConfirmDialog();
+        showLoading(false);
+    }
+}
+
+// 视图模式设置
+function setViewMode(mode) {
+    const gridViewBtn = document.getElementById('gridViewBtn');
+    const listViewBtn = document.getElementById('listViewBtn');
+    
+    if (mode === 'grid') {
+        imageGrid.classList.add('grid-view');
+        imageGrid.classList.remove('list-view');
+        gridViewBtn.classList.add('active');
+        listViewBtn.classList.remove('active');
+    } else if (mode === 'list') {
+        imageGrid.classList.add('list-view');
+        imageGrid.classList.remove('grid-view');
+        listViewBtn.classList.add('active');
+        gridViewBtn.classList.remove('active');
+    }
+    
+    // 重新布局
+    if (imageGrid && imageGrid.children.length > 0) {
+        layoutWaterfall();
+    }
+}
 
 // 初始化
 document.addEventListener('DOMContentLoaded', function() {
@@ -61,6 +259,7 @@ function bindEvents() {
     
     // 目录选择
     directorySelect.addEventListener('change', handleDirectoryChange);
+    recycleBinBtn.addEventListener('click', toggleRecycleBinMode);
     
     // 排序控件
     document.getElementById('sortBy').addEventListener('change', loadImages);
@@ -68,6 +267,17 @@ function bindEvents() {
     
     // 视图控件
     document.getElementById('gridViewBtn').addEventListener('click', () => setViewMode('grid'));
+    document.getElementById('listViewBtn').addEventListener('click', () => setViewMode('list'));
+    
+    // 选择模式
+    selectModeBtn.addEventListener('click', toggleSelectionMode);
+    downloadSelectedBtn.addEventListener('click', downloadSelectedImages);
+    deleteSelectedBtn.addEventListener('click', showDeleteConfirmDialog);
+    clearSelectionBtn.addEventListener('click', clearSelection);
+    confirmDeleteBtn.addEventListener('click', confirmDelete);
+    cancelDeleteBtn.addEventListener('click', hideDeleteConfirmDialog);
+    confirmRecycleBinBtn.addEventListener('click', confirmRecycleBinAction);
+    cancelRecycleBinBtn.addEventListener('click', hideRecycleBinConfirmDialog);
     
     // 窗口大小变化时重新布局
     window.addEventListener('resize', debounce(() => {
@@ -93,6 +303,7 @@ function bindEvents() {
         e.stopPropagation();
         navigateImage(1);
     });
+    deleteImageBtn.addEventListener('click', deleteCurrentImage);
     
     // 缩放控件
     document.getElementById('zoomIn').addEventListener('click', (e) => {
@@ -349,7 +560,7 @@ function createFolderItem(subdir) {
 function createImageItem(image, index) {
     const imageItem = document.createElement('div');
     imageItem.className = 'image-item';
-    imageItem.onclick = () => openImageViewer(index);
+    imageItem.dataset.index = index;
     
     const img = document.createElement('img');
     img.className = 'image-thumbnail';
@@ -357,8 +568,24 @@ function createImageItem(image, index) {
     img.alt = image.metadata.filename;
     img.loading = 'lazy';
     
-    // 直接添加图片到imageItem，不添加额外的白色方块和星星评分
+    // 创建选择框容器
+    const checkboxContainer = document.createElement('div');
+    checkboxContainer.className = 'image-select-checkbox';
+    
     imageItem.appendChild(img);
+    imageItem.appendChild(checkboxContainer);
+    
+    // 设置点击事件 - 在正常模式下打开查看器，在选择模式下选择图片
+    const defaultClickHandler = () => {
+        if (isSelectionMode) {
+            selectImage(index, imageItem);
+        } else {
+            openImageViewer(index);
+        }
+    };
+    
+    imageItem.onclick = defaultClickHandler;
+    originalClickHandlers.set(imageItem, defaultClickHandler);
     
     return imageItem;
 }
@@ -798,6 +1025,183 @@ function addImageDragFunctionality() {
     imageContainer.addEventListener('mousemove', drag);
     
     // 鼠标释放事件
+
+// 选择模式功能
+function toggleSelectionMode() {
+    isSelectionMode = !isSelectionMode;
+    
+    if (isSelectionMode) {
+        selectModeBtn.innerHTML = '<i class="fas fa-times"></i> 取消选择';
+        selectModeBtn.classList.remove('btn-primary');
+        selectModeBtn.classList.add('btn-secondary');
+        selectionCount.classList.remove('hidden');
+        batchActions.classList.remove('hidden');
+        
+        // 为所有图片项添加选择框显示
+        const imageItems = document.querySelectorAll('.image-item');
+        imageItems.forEach(item => {
+            const checkbox = item.querySelector('.image-select-checkbox');
+            if (checkbox) {
+                checkbox.style.display = 'flex';
+            }
+        });
+        
+        // 添加Shift多选支持
+        let lastSelectedIndex = -1;
+        const handleSelectionClick = (e) => {
+            if (e.shiftKey && lastSelectedIndex !== -1 && isSelectionMode) {
+                const currentIndex = parseInt(e.currentTarget.dataset.index);
+                const startIndex = Math.min(lastSelectedIndex, currentIndex);
+                const endIndex = Math.max(lastSelectedIndex, currentIndex);
+                
+                const imageItems = document.querySelectorAll('.image-item');
+                for (let i = startIndex; i <= endIndex; i++) {
+                    selectImage(i, imageItems[i], true);
+                }
+            } else if (isSelectionMode) {
+                lastSelectedIndex = parseInt(e.currentTarget.dataset.index);
+            }
+        };
+        
+        document.querySelectorAll('.image-item').forEach(item => {
+            item.addEventListener('click', handleSelectionClick);
+        });
+    } else {
+        selectModeBtn.innerHTML = '<i class="fas fa-check-square"></i> 选择照片';
+        selectModeBtn.classList.remove('btn-secondary');
+        selectModeBtn.classList.add('btn-primary');
+        clearSelection();
+        selectionCount.classList.add('hidden');
+        batchActions.classList.add('hidden');
+        
+        // 隐藏所有选择框
+        const imageItems = document.querySelectorAll('.image-item');
+        imageItems.forEach(item => {
+            const checkbox = item.querySelector('.image-select-checkbox');
+            if (checkbox) {
+                checkbox.style.display = 'none';
+            }
+        });
+    }
+}
+
+function selectImage(index, imageItem, isMultiSelect = false) {
+    if (selectedImages.has(index)) {
+        // 如果已经选中且不是多选模式，则取消选中
+        if (!isMultiSelect) {
+            selectedImages.delete(index);
+            imageItem.classList.remove('selected');
+        }
+    } else {
+        // 如果未选中，则选中
+        selectedImages.add(index);
+        imageItem.classList.add('selected');
+    }
+    
+    updateSelectionCount();
+}
+
+function clearSelection() {
+    selectedImages.clear();
+    
+    // 移除所有选中状态
+    const imageItems = document.querySelectorAll('.image-item');
+    imageItems.forEach(item => {
+        item.classList.remove('selected');
+    });
+    
+    updateSelectionCount();
+}
+
+function updateSelectionCount() {
+    const count = selectedImages.size;
+    selectionCount.textContent = `已选择 ${count} 张`;
+    batchSelectionCount.textContent = `已选择 ${count} 张`;
+    
+    // 根据选择数量启用或禁用删除按钮
+    deleteSelectedBtn.disabled = count === 0;
+}
+
+function showDeleteConfirmDialog() {
+    if (selectedImages.size === 0) return;
+    
+    deleteConfirmDialog.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+
+function hideDeleteConfirmDialog() {
+    deleteConfirmDialog.classList.add('hidden');
+    document.body.style.overflow = 'auto';
+}
+
+async function confirmDelete() {
+    const selectedIndices = Array.from(selectedImages);
+    const filesToDelete = selectedIndices.map(index => currentImages[index].file_path);
+    
+    // 获取删除类型
+    const deleteType = document.querySelector('input[name="deleteType"]:checked').value;
+    
+    try {
+        showLoading(true);
+        
+        // 发送删除请求到服务器
+        const response = await fetch('/api/delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                file_paths: filesToDelete,
+                delete_type: deleteType
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // 删除成功后重新加载当前页
+            await loadImages();
+            
+            // 退出选择模式
+            if (isSelectionMode) {
+                toggleSelectionMode();
+            }
+        } else {
+            alert('删除失败: ' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('删除过程中发生错误:', error);
+        alert('删除过程中发生网络错误，请稍后重试');
+    } finally {
+        hideDeleteConfirmDialog();
+        showLoading(false);
+    }
+}
+
+// 视图模式设置
+function setViewMode(mode) {
+    const gridViewBtn = document.getElementById('gridViewBtn');
+    const listViewBtn = document.getElementById('listViewBtn');
+    
+    if (mode === 'grid') {
+        imageGrid.classList.add('grid-view');
+        imageGrid.classList.remove('list-view');
+        gridViewBtn.classList.add('active');
+        listViewBtn.classList.remove('active');
+    } else if (mode === 'list') {
+        imageGrid.classList.add('list-view');
+        imageGrid.classList.remove('grid-view');
+        listViewBtn.classList.add('active');
+        gridViewBtn.classList.remove('active');
+    }
+    
+    // 重新布局
+    if (imageGrid && imageGrid.children.length > 0) {
+        layoutWaterfall();
+    }
+}
+
+// 其他现有函数...
     document.addEventListener('mouseup', stopDrag);
     
     // 鼠标离开容器事件
@@ -1016,5 +1420,342 @@ async function checkLoginStatus() {
         }
     } catch (error) {
         showLoginModal();
+    }
+}
+
+// 回收站相关功能函数
+function toggleRecycleBinMode() {
+    isRecycleBinMode = !isRecycleBinMode;
+    
+    if (isRecycleBinMode) {
+        // 进入回收站模式
+        recycleBinBtn.innerHTML = '<i class="fas fa-times"></i> 退出回收站';
+        recycleBinBtn.classList.add('active');
+        directorySelect.disabled = true;
+        document.querySelector('.toolbar').classList.add('recycle-bin-mode');
+        
+        // 加载回收站内容
+        loadRecycleBinItems();
+    } else {
+        // 退出回收站模式
+        recycleBinBtn.innerHTML = '<i class="fas fa-trash-alt"></i> 回收站';
+        recycleBinBtn.classList.remove('active');
+        directorySelect.disabled = false;
+        document.querySelector('.toolbar').classList.remove('recycle-bin-mode');
+        
+        // 重新加载普通图片
+        if (currentDirectory) {
+            loadImages();
+        }
+    }
+}
+
+async function loadRecycleBinItems() {
+    showLoading(true);
+    
+    try {
+        const response = await fetch('/api/recycle-bin?page=' + currentPage);
+        const data = await response.json();
+        
+        currentRecycleBinItems = data.items;
+        totalPages = data.total_pages;
+        
+        displayRecycleBinItems(currentRecycleBinItems);
+        updatePagination();
+    } catch (error) {
+        console.error('加载回收站内容失败:', error);
+        imageGrid.innerHTML = '<div class="error">加载回收站内容失败</div>';
+    } finally {
+        showLoading(false);
+    }
+}
+
+function displayRecycleBinItems(items) {
+    imageGrid.innerHTML = '';
+    
+    if (items.length === 0) {
+        imageGrid.innerHTML = '<div class="empty-recycle-bin">回收站为空</div>';
+        return;
+    }
+    
+    items.forEach((item, index) => {
+        const imageItem = createRecycleBinItem(item, index);
+        imageGrid.appendChild(imageItem);
+    });
+    
+    // 应用瀑布流布局
+    setTimeout(() => {
+        layoutWaterfall();
+    }, 100);
+}
+
+function createRecycleBinItem(item, index) {
+    const imageItem = document.createElement('div');
+    imageItem.className = 'image-item';
+    imageItem.dataset.index = index;
+    
+    const img = document.createElement('img');
+    img.className = 'image-thumbnail';
+    img.src = `/api/image/thumbnail?file_path=${encodeURIComponent(item.recycle_path)}`;
+    img.alt = item.original_filename;
+    img.loading = 'lazy';
+    
+    // 创建选择框容器
+    const checkboxContainer = document.createElement('div');
+    checkboxContainer.className = 'image-select-checkbox';
+    
+    // 创建删除时间信息
+    const deleteTime = document.createElement('div');
+    deleteTime.className = 'recycle-bin-info';
+    deleteTime.textContent = `删除于: ${new Date(item.deleted_time * 1000).toLocaleString()}`;
+    
+    imageItem.appendChild(img);
+    imageItem.appendChild(checkboxContainer);
+    imageItem.appendChild(deleteTime);
+    
+    // 设置点击事件 - 在正常模式下打开查看器，在选择模式下选择图片
+    const defaultClickHandler = () => {
+        if (isSelectionMode) {
+            selectImage(index, imageItem);
+        } else {
+            openRecycleBinImageViewer(index);
+        }
+    };
+    
+    imageItem.onclick = defaultClickHandler;
+    originalClickHandlers.set(imageItem, defaultClickHandler);
+    
+    return imageItem;
+}
+
+function openRecycleBinImageViewer(index) {
+    currentImageIndex = index;
+    const item = currentRecycleBinItems[index];
+    
+    imageViewer.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    
+    loadRecycleBinImageInViewer(item);
+    updateViewerNavigation();
+}
+
+async function loadRecycleBinImageInViewer(item) {
+    const viewerImage = document.getElementById('viewerImage');
+    const viewerImageName = document.getElementById('viewerImageName');
+    const viewerImageIndex = document.getElementById('viewerImageIndex');
+    
+    viewerImageName.textContent = item.original_filename;
+    viewerImageIndex.textContent = `${currentImageIndex + 1} / ${currentRecycleBinItems.length}`;
+    
+    viewerImage.src = `/api/image/preview?file_path=${encodeURIComponent(item.recycle_path)}`;
+    
+    // 加载元数据
+    await loadImageMetadata(item.recycle_path);
+    
+    // 重置缩放
+    resetZoom();
+}
+
+// 下载所选图片
+function downloadSelectedImages() {
+    const selectedIndices = Array.from(selectedImages);
+    
+    if (selectedIndices.length === 0) {
+        alert('请先选择要下载的图片');
+        return;
+    }
+    
+    // 如果在回收站模式下
+    if (isRecycleBinMode) {
+        selectedIndices.forEach(index => {
+            const item = currentRecycleBinItems[index];
+            const link = document.createElement('a');
+            link.href = `/api/image/download?file_path=${encodeURIComponent(item.recycle_path)}`;
+            link.download = item.original_filename;
+            link.click();
+        });
+    } else {
+        // 正常模式下
+        selectedIndices.forEach(index => {
+            const image = currentImages[index];
+            const link = document.createElement('a');
+            link.href = `/api/image/download?file_path=${encodeURIComponent(image.file_path)}`;
+            link.download = image.metadata.filename;
+            link.click();
+        });
+    }
+}
+
+// 删除当前图片
+async function deleteCurrentImage() {
+    // 获取当前图片路径
+    const filePath = isRecycleBinMode 
+        ? currentRecycleBinItems[currentImageIndex].recycle_path 
+        : currentImages[currentImageIndex].file_path;
+    
+    // 在回收站模式下是永久删除，否则是移动到回收站
+    const deleteType = isRecycleBinMode ? 'permanent' : 'recycle';
+    
+    // 显示确认对话框
+    const confirmed = confirm(
+        isRecycleBinMode 
+            ? '确定要永久删除此图片吗？此操作无法撤销。' 
+            : '确定要将此图片移至回收站吗？'
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+        showLoading(true);
+        
+        // 发送删除请求到服务器
+        const response = await fetch('/api/delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                file_paths: [filePath],
+                delete_type: deleteType
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // 删除成功后关闭查看器
+            closeImageViewer();
+            
+            // 重新加载内容
+            if (isRecycleBinMode) {
+                await loadRecycleBinItems();
+            } else {
+                await loadImages();
+            }
+        } else {
+            alert('删除失败: ' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('删除过程中发生错误:', error);
+        alert('删除过程中发生网络错误，请稍后重试');
+    } finally {
+        showLoading(false);
+    }
+}
+
+// 确认回收站操作
+async function confirmRecycleBinAction() {
+    const selectedIndices = Array.from(selectedImages);
+    
+    if (selectedIndices.length === 0) {
+        alert('请先选择要操作的项目');
+        hideRecycleBinConfirmDialog();
+        return;
+    }
+    
+    // 获取操作类型
+    const actionType = document.querySelector('input[name="recycleBinActionType"]:checked').value;
+    
+    // 获取选中的文件路径
+    const filePaths = selectedIndices.map(index => {
+        return isRecycleBinMode 
+            ? currentRecycleBinItems[index].recycle_path 
+            : currentImages[index].file_path;
+    });
+    
+    try {
+        showLoading(true);
+        
+        let endpoint = '';
+        let requestBody = {};
+        
+        if (actionType === 'restore') {
+            // 还原操作
+            endpoint = '/api/recycle-bin/restore';
+            // 获取原始目录信息
+            const originalDirs = selectedIndices.map(index => {
+                return isRecycleBinMode && currentRecycleBinItems[index] ? 
+                    currentRecycleBinItems[index].original_dir : '';
+            });
+            requestBody = { 
+                file_paths: filePaths,
+                original_dirs: originalDirs
+            };
+        } else if (actionType === 'permanent_delete') {
+            // 永久删除操作
+            endpoint = '/api/delete';
+            requestBody = {
+                file_paths: filePaths,
+                delete_type: 'permanent'
+            };
+        }
+        
+        // 发送请求到服务器
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // 操作成功后重新加载内容
+            if (isRecycleBinMode) {
+                await loadRecycleBinItems();
+            } else {
+                await loadImages();
+            }
+            
+            // 退出选择模式
+            if (isSelectionMode) {
+                toggleSelectionMode();
+            }
+        } else {
+            alert('操作失败: ' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('操作过程中发生错误:', error);
+        alert('操作过程中发生网络错误，请稍后重试');
+    } finally {
+        hideRecycleBinConfirmDialog();
+        showLoading(false);
+    }
+}
+
+// 隐藏回收站确认对话框
+function hideRecycleBinConfirmDialog() {
+    recycleBinConfirmDialog.classList.add('hidden');
+    document.body.style.overflow = 'auto';
+}
+
+// 修改loadImages函数以支持回收站模式
+async function loadImages() {
+    if (!currentDirectory) return;
+    
+    showLoading(true);
+    
+    const sortBy = document.getElementById('sortBy').value;
+    const sortOrder = document.getElementById('sortOrder').value;
+    
+    try {
+        const response = await fetch(`/api/browse?directory=${encodeURIComponent(currentDirectory)}&page=${currentPage}&sort_by=${sortBy}&sort_order=${sortOrder}`);
+        const data = await response.json();
+        
+        currentImages = data.images;
+        currentSubdirectories = data.subdirectories || [];
+        totalPages = data.total_pages;
+        
+        displayContent(data.subdirectories || [], data.images);
+        updatePagination();
+        updateBreadcrumb();
+        
+    } catch (error) {
+        console.error('加载内容失败:', error);
+        imageGrid.innerHTML = '<div class="error">加载内容失败</div>';
+    } finally {
+        showLoading(false);
     }
 }
