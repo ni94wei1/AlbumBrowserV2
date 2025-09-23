@@ -15,6 +15,8 @@ let selectedImages = new Set();
 let originalClickHandlers = new Map();
 let isRecycleBinMode = false;
 let currentRecycleBinItems = [];
+// 当前回收站操作类型
+let currentRecycleBinActionType = null;
 
 // Pinterest瀑布流布局变量
 let columnHeights = [];
@@ -64,6 +66,8 @@ const recycleBinConfirmMessage = document.getElementById('recycleBinConfirmMessa
 const confirmRecycleBinBtn = document.getElementById('confirmRecycleBinBtn');
 const cancelRecycleBinBtn = document.getElementById('cancelRecycleBinBtn');
 const deleteImageBtn = document.getElementById('deleteImageBtn');
+const restoreSelectedBtn = document.getElementById('restoreSelectedBtn');
+const permanentlyDeleteSelectedBtn = document.getElementById('permanentlyDeleteSelectedBtn');
 
 // 选择模式功能函数
 function toggleSelectionMode() {
@@ -157,8 +161,10 @@ function updateSelectionCount() {
     selectionCount.textContent = `已选择 ${count} 张`;
     batchSelectionCount.textContent = `已选择 ${count} 张`;
     
-    // 根据选择数量启用或禁用删除按钮
+    // 根据选择数量和模式启用或禁用相关按钮
     deleteSelectedBtn.disabled = count === 0;
+    restoreSelectedBtn.disabled = count === 0;
+    permanentlyDeleteSelectedBtn.disabled = count === 0;
 }
 
 function showDeleteConfirmDialog() {
@@ -282,6 +288,12 @@ function bindEvents() {
     
     // 清空回收站按钮
     clearRecycleBinBtn.addEventListener('click', clearRecycleBin);
+    
+    // 还原所选项目
+    restoreSelectedBtn.addEventListener('click', showRestoreConfirmDialog);
+    
+    // 彻底删除所选项目
+    permanentlyDeleteSelectedBtn.addEventListener('click', showPermanentDeleteConfirmDialog);
     
     // 窗口大小变化时重新布局
     window.addEventListener('resize', debounce(() => {
@@ -1157,6 +1169,8 @@ function updateSelectionCount() {
     
     // 根据选择数量启用或禁用删除按钮
     deleteSelectedBtn.disabled = count === 0;
+    restoreSelectedBtn.disabled = count === 0;
+    permanentlyDeleteSelectedBtn.disabled = count === 0;
 }
 
 function showDeleteConfirmDialog() {
@@ -1477,6 +1491,28 @@ function toggleRecycleBinMode() {
         
         // 加载回收站内容
         loadRecycleBinItems();
+        
+        // 在回收站模式下自动启用选择模式
+        setTimeout(() => {
+            if (!isSelectionMode) {
+                toggleSelectionMode();
+            }
+            
+            // 自动显示选择框
+            const imageItems = document.querySelectorAll('.image-item');
+            imageItems.forEach(item => {
+                const checkbox = item.querySelector('.image-select-checkbox');
+                if (checkbox) {
+                    checkbox.style.display = 'flex';
+                }
+            });
+            
+            // 在回收站模式下显示还原和彻底删除按钮，隐藏普通的删除和下载按钮
+            restoreSelectedBtn.classList.remove('hidden');
+            permanentlyDeleteSelectedBtn.classList.remove('hidden');
+            deleteSelectedBtn.classList.add('hidden');
+            downloadSelectedBtn.classList.add('hidden');
+        }, 100);
     } else {
         // 退出回收站模式
         recycleBinBtn.innerHTML = '<i class="fas fa-trash-alt"></i> 回收站';
@@ -1487,6 +1523,17 @@ function toggleRecycleBinMode() {
         // 隐藏清空回收站按钮，显示选择照片按钮
         clearRecycleBinBtn.classList.add('hidden');
         selectModeBtn.classList.remove('hidden');
+        
+        // 隐藏回收站模式下的特殊按钮，显示普通按钮
+        restoreSelectedBtn.classList.add('hidden');
+        permanentlyDeleteSelectedBtn.classList.add('hidden');
+        deleteSelectedBtn.classList.remove('hidden');
+        downloadSelectedBtn.classList.remove('hidden');
+        
+        // 清除选择并关闭选择模式
+        if (isSelectionMode) {
+            toggleSelectionMode();
+        }
         
         // 重新加载普通图片
         if (currentDirectory) {
@@ -1597,13 +1644,9 @@ function createRecycleBinItem(item, index) {
     imageItem.appendChild(checkboxContainer);
     imageItem.appendChild(deleteTime);
     
-    // 设置点击事件 - 在正常模式下打开查看器，在选择模式下选择图片
+    // 设置点击事件 - 在回收站中点击图片直接选择
     const defaultClickHandler = () => {
-        if (isSelectionMode) {
-            selectImage(index, imageItem);
-        } else {
-            openRecycleBinImageViewer(index);
-        }
+        selectImage(index, imageItem);
     };
     
     imageItem.onclick = defaultClickHandler;
@@ -1737,8 +1780,11 @@ async function confirmRecycleBinAction() {
         return;
     }
     
-    // 获取操作类型
-    const actionType = document.querySelector('input[name="recycleBinActionType"]:checked').value;
+    // 优先使用currentRecycleBinActionType变量，如果不存在则从HTML表单中获取
+    let actionType = currentRecycleBinActionType;
+    if (!actionType) {
+        actionType = document.querySelector('input[name="recycleBinActionType"]:checked').value;
+    }
     
     // 获取选中的文件路径
     const filePaths = selectedIndices.map(index => {
@@ -1813,6 +1859,49 @@ async function confirmRecycleBinAction() {
 function hideRecycleBinConfirmDialog() {
     recycleBinConfirmDialog.classList.add('hidden');
     document.body.style.overflow = 'auto';
+    
+    // 重置操作类型
+    currentRecycleBinActionType = null;
+}
+
+// 显示还原确认对话框
+function showRestoreConfirmDialog() {
+    const count = selectedImages.size;
+    
+    if (count === 0) {
+        alert('请先选择要还原的项目');
+        return;
+    }
+    
+    // 设置操作类型为还原
+    currentRecycleBinActionType = 'restore';
+    
+    // 更新确认消息
+    recycleBinConfirmMessage.textContent = `确定要还原已选择的 ${count} 个项目吗？`;
+    
+    // 显示确认对话框
+    recycleBinConfirmDialog.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+
+// 显示彻底删除确认对话框
+function showPermanentDeleteConfirmDialog() {
+    const count = selectedImages.size;
+    
+    if (count === 0) {
+        alert('请先选择要彻底删除的项目');
+        return;
+    }
+    
+    // 设置操作类型为永久删除
+    currentRecycleBinActionType = 'permanent_delete';
+    
+    // 更新确认消息
+    recycleBinConfirmMessage.textContent = `确定要彻底删除已选择的 ${count} 个项目吗？此操作无法撤销！`;
+    
+    // 显示确认对话框
+    recycleBinConfirmDialog.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
 }
 
 // 修改loadImages函数以支持回收站模式
