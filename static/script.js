@@ -48,6 +48,7 @@ const imageGrid = document.getElementById('imageGrid');
 const loadingSpinner = document.getElementById('loadingSpinner');
 const userInfo = document.getElementById('userInfo');
 const logoutBtn = document.getElementById('logoutBtn');
+const clearRecycleBinBtn = document.getElementById('clearRecycleBinBtn');
 const selectModeBtn = document.getElementById('selectModeBtn');
 const selectionCount = document.getElementById('selectionCount');
 const batchActions = document.getElementById('batchActions');
@@ -278,6 +279,9 @@ function bindEvents() {
     cancelDeleteBtn.addEventListener('click', hideDeleteConfirmDialog);
     confirmRecycleBinBtn.addEventListener('click', confirmRecycleBinAction);
     cancelRecycleBinBtn.addEventListener('click', hideRecycleBinConfirmDialog);
+    
+    // 清空回收站按钮
+    clearRecycleBinBtn.addEventListener('click', clearRecycleBin);
     
     // 窗口大小变化时重新布局
     window.addEventListener('resize', debounce(() => {
@@ -1064,9 +1068,9 @@ function toggleSelectionMode() {
     isSelectionMode = !isSelectionMode;
     
     if (isSelectionMode) {
-        selectModeBtn.innerHTML = '<i class="fas fa-times"></i> 取消选择';
-        selectModeBtn.classList.remove('btn-primary');
-        selectModeBtn.classList.add('btn-secondary');
+        selectModeBtn.innerHTML = '<i class="fas fa-times-circle"></i> 取消选择';
+        selectModeBtn.classList.remove('btn-primary', 'select-btn');
+        selectModeBtn.classList.add('btn-secondary', 'deselect-btn');
         selectionCount.classList.remove('hidden');
         batchActions.classList.remove('hidden');
         
@@ -1101,8 +1105,8 @@ function toggleSelectionMode() {
         });
     } else {
         selectModeBtn.innerHTML = '<i class="fas fa-check-square"></i> 选择照片';
-        selectModeBtn.classList.remove('btn-secondary');
-        selectModeBtn.classList.add('btn-primary');
+        selectModeBtn.classList.remove('btn-secondary', 'deselect-btn');
+        selectModeBtn.classList.add('btn-primary', 'select-btn');
         clearSelection();
         selectionCount.classList.add('hidden');
         batchActions.classList.add('hidden');
@@ -1467,6 +1471,10 @@ function toggleRecycleBinMode() {
         directorySelect.disabled = true;
         document.querySelector('.toolbar').classList.add('recycle-bin-mode');
         
+        // 显示清空回收站按钮，隐藏选择照片按钮
+        clearRecycleBinBtn.classList.remove('hidden');
+        selectModeBtn.classList.add('hidden');
+        
         // 加载回收站内容
         loadRecycleBinItems();
     } else {
@@ -1476,10 +1484,48 @@ function toggleRecycleBinMode() {
         directorySelect.disabled = false;
         document.querySelector('.toolbar').classList.remove('recycle-bin-mode');
         
+        // 隐藏清空回收站按钮，显示选择照片按钮
+        clearRecycleBinBtn.classList.add('hidden');
+        selectModeBtn.classList.remove('hidden');
+        
         // 重新加载普通图片
         if (currentDirectory) {
             loadImages();
         }
+    }
+}
+
+// 清空回收站功能
+async function clearRecycleBin() {
+    // 显示确认对话框
+    const confirmed = confirm('确定要清空回收站吗？此操作将永久删除所有文件，无法撤销！');
+    
+    if (!confirmed) return;
+    
+    try {
+        showLoading(true);
+        
+        // 发送清空请求到服务器
+        const response = await fetch('/api/recycle-bin/empty', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // 清空成功后重新加载回收站
+            await loadRecycleBinItems();
+        } else {
+            alert('清空失败: ' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('清空回收站过程中发生错误:', error);
+        alert('清空回收站过程中发生网络错误，请稍后重试');
+    } finally {
+        showLoading(false);
     }
 }
 

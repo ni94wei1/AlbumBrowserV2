@@ -55,9 +55,6 @@
         <!-- 工具栏 -->
         <div class="toolbar">
             <div class="toolbar-left">
-                <button id="selectModeBtn" class="btn btn-primary" title="选择照片">
-                    <i class="fas fa-check-square"></i> 选择照片
-                </button>
                 <span id="selectionCount" class="selection-count hidden">已选择 0 张</span>
                 <div class="sort-controls">
                     <label>排序:</label>
@@ -74,6 +71,9 @@
                 </div>
             </div>
             <div class="toolbar-right">
+                <button id="selectModeBtn" class="btn btn-primary select-btn" title="选择照片">
+                    <i class="fas fa-check-square"></i> 选择照片
+                </button>
                 <div class="view-controls">
                     <button id="gridViewBtn" class="btn btn-icon active" title="网格视图">
                         <i class="fas fa-th"></i>
@@ -86,6 +86,9 @@
                     <label>缩略图大小:</label>
                     <input type="range" id="thumbnailSize" min="100" max="300" value="200">
                 </div>
+                <button id="clearRecycleBinBtn" class="btn btn-danger hidden" title="清空回收站">
+                    <i class="fas fa-trash-restore-alt"></i> 清空回收站
+                </button>
             </div>
         </div>
 
