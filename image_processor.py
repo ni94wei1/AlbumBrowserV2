@@ -13,6 +13,7 @@ from PIL.ExifTags import TAGS
 import exifread
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime
+from PIL import ImageOps
 
 # 暂时禁用rawpy依赖，使用替代方法处理RAW文件
 RAWPY_AVAILABLE = False
@@ -168,6 +169,9 @@ class ImageProcessor:
                     elif task_type == 'preview':
                         print(f"异步生成预览图: {file_path}")
                         self.generate_preview(file_path)
+                    elif task_type == 'metadata':
+                        print(f"异步提取元数据: {file_path}")
+                        self.extract_metadata(file_path)
                     
                     self.cache_queue.task_done()
                 except queue.Empty:
@@ -272,31 +276,15 @@ class ImageProcessor:
             return None
 
     def _process_raw_file_for_preview(self, file_path: str, file_hash: str, cache_dir: str) -> Optional[Image.Image]:
-        """统一处理RAW文件的预览图提取，增强了对Canon CR3格式的支持"""
+        """统一处理RAW文件预览图：提取嵌入JPEG或占位图，并正确修正方向"""
         try:
-            # 获取文件信息
             file_extension = os.path.splitext(file_path)[1].lower()
-            file_size = os.path.getsize(file_path) / 1024 / 1024  # MB
-            print(f"处理RAW文件: {file_path}")
-            print(f"  文件扩展名: {file_extension}")
-            print(f"  文件大小: {file_size:.2f} MB")
-            
-            # 尝试使用多种方法提取缩略图
+            print(f"处理RAW文件: {file_path} 扩展名: {file_extension}")
             temp_image_path = None
-            
-            # 1. 尝试使用exifread库提取缩略图（适用于大多数RAW格式）
             try:
-                # 对于Canon CR3格式的特殊处理
                 if file_extension == '.cr3':
-                    print(f"  这是Canon CR3格式文件")
-                    
-                    # 方法1: 尝试直接从文件读取嵌入的JPEG数据
-                    # CR3文件通常在文件开头或特定位置包含JPEG预览图
                     with open(file_path, 'rb') as f:
                         file_data = f.read()
-                        
-                        # 查找JPEG文件的开始标记(0xFFD8)和结束标记(0xFFD9)
-                        # 尝试寻找多个可能的JPEG片段，选择尺寸最大的那个
                         jpeg_starts = []
                         pos = 0
                         while True:
@@ -305,82 +293,46 @@ class ImageProcessor:
                                 break
                             jpeg_starts.append(pos)
                             pos += 1
-                        
                         best_jpeg_data = None
                         best_jpeg_size = 0
-                        
                         for jpeg_start in jpeg_starts:
                             jpeg_end = file_data.find(b'\xff\xd9', jpeg_start)
                             if jpeg_end != -1:
-                                jpeg_data_candidate = file_data[jpeg_start:jpeg_end+2]
-                                jpeg_size = len(jpeg_data_candidate)
-                                
-                                # 选择最大的JPEG数据块（通常是高质量预览图）
-                                if jpeg_size > best_jpeg_size:
-                                    best_jpeg_size = jpeg_size
-                                    best_jpeg_data = jpeg_data_candidate
-                        
+                                cand = file_data[jpeg_start:jpeg_end+2]
+                                if len(cand) > best_jpeg_size:
+                                    best_jpeg_size = len(cand)
+                                    best_jpeg_data = cand
                         if best_jpeg_data:
-                            # 保存提取的JPEG数据到临时文件
                             temp_image_path = os.path.join(cache_dir, f"temp_thumb_preview_{file_hash}.jpg")
-                            with open(temp_image_path, 'wb') as jpeg_file:
-                                jpeg_file.write(best_jpeg_data)
-                            print(f"  成功提取CR3嵌入JPEG预览图，大小: {best_jpeg_size} 字节")
-                        else:
-                            print(f"  未找到有效JPEG数据")
+                            with open(temp_image_path, 'wb') as jf:
+                                jf.write(best_jpeg_data)
+                            print(f"  成功提取CR3嵌入JPEG预览图")
             except Exception as e:
-                print(f"  提取缩略图时出错: {str(e)}")
-            
-            # 如果未能提取到缩略图，创建一个占位图
+                print(f"  提取缩略图时出错: {e}")
             if not temp_image_path:
-                print(f"  尝试生成一个表示RAW文件的占位图")
-                # 创建一个表示RAW文件的占位图
-                placeholder_size = 300  # 默认占位图尺寸
+                placeholder_size = 300
                 placeholder = Image.new('RGB', (placeholder_size, placeholder_size), color='gray')
                 draw = ImageDraw.Draw(placeholder)
                 text = "RAW\n文件"
                 font = ImageFont.load_default()
-                
-                # 计算文本位置使其居中
-                text_bbox = draw.textbbox((0, 0), text, font=font)
-                text_width = text_bbox[2] - text_bbox[0]
-                text_height = text_bbox[3] - text_bbox[1]
-                position = ((placeholder_size - text_width) // 2, (placeholder_size - text_height) // 2)
-                
-                # 在占位图上绘制文本
+                tb = draw.textbbox((0, 0), text, font=font)
+                position = ((placeholder_size - (tb[2]-tb[0]))//2, (placeholder_size - (tb[3]-tb[1]))//2)
                 draw.text(position, text, fill='white', font=font)
-                
-                # 保存占位图
                 temp_image_path = os.path.join(cache_dir, f"temp_thumb_preview_{file_hash}.jpg")
                 placeholder.save(temp_image_path, 'JPEG', quality=85)
-                print(f"  已创建RAW文件占位图")
-            
-            # 加载临时文件并处理
             if temp_image_path and os.path.exists(temp_image_path):
                 image = Image.open(temp_image_path)
-                
-                # 检查是否是横屏图片，如果是则旋转90度使其成为竖屏
-                img_width, img_height = image.size
-                if img_width > img_height:
-                    print(f"  检测到横屏RAW图片({img_width}x{img_height})，强制旋转为竖屏")
-                    image = image.rotate(90, expand=True)
-                
-                # 尝试修复方向
                 image = self.fix_image_orientation(image)
-                
-                # 清理临时文件
                 try:
                     os.remove(temp_image_path)
                 except:
                     pass
-                
                 return image
             else:
-                print(f"  未能创建临时图像文件")
+                print("  未能创建临时图像文件")
                 return None
-            
         except Exception as e:
-            print(f"处理RAW文件时发生错误: {str(e)}")
+            print(f"处理RAW文件时发生错误: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -470,7 +422,10 @@ class ImageProcessor:
                             new_height = int(img_height * scale_factor)
                         
                         # 使用LANCZOS滤镜进行高质量放大
-                        image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                        # image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                        target_size = (new_width, new_height) if width and height else (width or new_width, height or new_height)
+                        image = ImageOps.fit(image, target_size, Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+
                         print(f"  放大后尺寸: {new_width}x{new_height}")
                     
                     if self._resize_and_save_image(image, thumbnail_path, max_width, max_height, thumbnail_quality):
@@ -535,70 +490,31 @@ class ImageProcessor:
             return None
     
     def generate_preview(self, file_path: str) -> Optional[str]:
-        """生成预览大图（保持原比例，根据配置和图片方向智能计算尺寸）"""
+        """生成预览图：按EXIF修正方向并缩放"""
         cache_dir = self.get_cache_dir(file_path)
         file_hash = self.get_file_hash(file_path)
         preview_path = os.path.join(cache_dir, f"preview_{file_hash}.jpg")
-        
         if os.path.exists(preview_path):
             return preview_path
-        
         try:
-            # 对于RAW文件的特殊处理
             if self.is_raw_format(file_path):
-                # 使用统一的RAW文件处理方法
                 image = self._process_raw_file_for_preview(file_path, file_hash, cache_dir)
-                if image:
-                    max_size = self.config.config['preview_max_size']
-                    preview_quality = self.config.config.get('preview_quality', 75)
-                    
-                    # 对于预览图，保持较大的尺寸
-                    if self._resize_and_save_image(image, preview_path, max_size, 0, preview_quality):
-                        return preview_path
-                # 如果无法提取预览图，返回None
+                if not image:
+                    return None
+                max_size = self.config.config.get('preview_max_size', 1600)
+                preview_quality = self.config.config.get('preview_quality', 75)
+                if self._resize_and_save_image(image, preview_path, max_size, 0, preview_quality):
+                    return preview_path
                 return None
-            
-            # 非RAW文件的标准处理
             image = self.load_image(file_path)
             if not image:
                 return None
-            
-            # 处理EXIF方向信息
             image = self.fix_image_orientation(image)
-            
-            # 获取配置的预览图最大尺寸
-            max_size = self.config.config['preview_max_size']
-            
-            # 计算缩放比例
-            img_width, img_height = image.size
-            aspect_ratio = img_width / img_height
-            
-            # 根据宽高比例调整最终尺寸
-            if aspect_ratio > 1:  # 横屏图片
-                new_width = min(max_size, img_width)
-                new_height = int(new_width / aspect_ratio)
-            else:  # 竖屏图片
-                new_height = min(max_size, img_height)
-                new_width = int(new_height * aspect_ratio)
-            
-            # 使用resize而不是thumbnail，以确保精确控制尺寸
-            image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            
-            # 处理透明通道，转换为RGB模式
-            if image.mode in ('RGBA', 'LA', 'P'):
-                # 创建白色背景
-                background = Image.new('RGB', image.size, (255, 255, 255))
-                if image.mode == 'P':
-                    image = image.convert('RGBA')
-                background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
-                image = background
-            elif image.mode != 'RGB':
-                image = image.convert('RGB')
-            
+            max_size = self.config.config.get('preview_max_size', 1600)
             preview_quality = self.config.config.get('preview_quality', 75)
-            image.save(preview_path, 'JPEG', quality=preview_quality, optimize=True, progressive=True)
-            return preview_path
-            
+            if self._resize_and_save_image(image, preview_path, max_size, 0, preview_quality):
+                return preview_path
+            return None
         except Exception as e:
             print(f"生成预览图失败 {file_path}: {e}")
             return None
@@ -732,32 +648,12 @@ class ImageProcessor:
         return metadata
     
     def fix_image_orientation(self, image: Image.Image) -> Image.Image:
-        """根据EXIF方向信息校正图片方向"""
+        """根据EXIF自动修正图片方向（使用Pillow的exif_transpose，推荐方法）"""
         try:
-            # 获取EXIF数据
-            exif = image._getexif()
-            if exif:
-                # 获取方向标签
-                orientation = exif.get(0x0112, 1)  # EXIF方向标签
-                
-                # 根据方向信息旋转图片
-                if orientation == 2:
-                    image = image.transpose(Image.FLIP_LEFT_RIGHT)
-                elif orientation == 3:
-                    image = image.rotate(180)
-                elif orientation == 4:
-                    image = image.transpose(Image.FLIP_TOP_BOTTOM)
-                elif orientation == 5:
-                    image = image.rotate(-90).transpose(Image.FLIP_LEFT_RIGHT)
-                elif orientation == 6:
-                    image = image.rotate(-90)
-                elif orientation == 7:
-                    image = image.rotate(90).transpose(Image.FLIP_LEFT_RIGHT)
-                elif orientation == 8:
-                    image = image.rotate(90)
+            from PIL import ImageOps
+            image = ImageOps.exif_transpose(image)
         except Exception as e:
-            print(f"处理图片方向时出错: {e}")
-        
+            print(f"处理图片方向时出错 (exif_transpose): {e}")
         return image
     
     def clean_all_thumbnails(self):
@@ -928,19 +824,20 @@ class ImageProcessor:
         """扫描当前目录中的图片文件（不递归子目录）
         
         优化逻辑：
-        1. 先扫描所有图片文件，收集信息
-        2. 优先生成前两张缩略图（同步），让客户端能快速进入目录
-        3. 其余缩略图和所有预览图异步生成，提高用户体验
+        1. 先扫描所有图片文件，收集基本信息（不等待元数据提取完成）
+        2. 只进行必要的文件检查和基本信息收集
+        3. 所有缩略图和预览图全部异步生成，不阻塞主流程
+        4. 返回不完整的图片信息，客户端后续可以异步加载
         """
         images = []
         image_paths = []
         
         try:
-            # 第一阶段：收集所有图片信息
+            # 快速扫描阶段：只收集基本文件信息，不做耗时操作
             for file in os.listdir(directory):
                 if file.startswith('.'):  # 跳过隐藏文件
                     continue
-                        
+                         
                 file_path = os.path.join(directory, file)
                 
                 # 只处理文件，不处理目录
@@ -974,63 +871,64 @@ class ImageProcessor:
                     
                     # 避免重复添加
                     if not any(img['file_path'] == display_path for img in images):
-                        # 提取元数据，但不生成缩略图和预览图
-                        metadata = self.extract_metadata(display_path)
-                        
-                        # 先检查缩略图是否已存在
+                        # 生成缓存路径，但不立即生成缓存或提取元数据
                         cache_dir = self.get_cache_dir(display_path)
                         file_hash = self.get_file_hash(display_path)
                         thumbnail_path = os.path.join(cache_dir, f"thumb_{file_hash}.jpg")
                         preview_path = os.path.join(cache_dir, f"preview_{file_hash}.jpg")
+                        metadata_path = os.path.join(cache_dir, f"meta_{file_hash}.json")
+                        
+                        # 构建基本图片信息
+                        # 注意：这里不调用extract_metadata，只提供基本信息
+                        is_raw = self.is_raw_format(display_path)
+                        
+                        # 只获取文件名、文件大小和修改时间等基本信息
+                        basic_info = {
+                            'filename': os.path.basename(display_path),
+                            'file_size': os.path.getsize(display_path),
+                            'modified_time': os.path.getmtime(display_path),
+                            'rating': 0,  # 默认评分
+                            'exif': {},
+                            'is_raw': is_raw
+                        }
+                        
+                        # 如果元数据缓存已存在，快速加载
+                        cached_metadata = None
+                        if os.path.exists(metadata_path):
+                            try:
+                                with open(metadata_path, 'r', encoding='utf-8') as f:
+                                    cached_metadata = json.load(f)
+                            except Exception as e:
+                                print(f"加载缓存的元数据失败 {display_path}: {e}")
                         
                         image_info = {
                             'file_path': display_path,
                             'relative_path': os.path.relpath(display_path, directory),
                             'thumbnail_path': thumbnail_path if os.path.exists(thumbnail_path) else None,
                             'preview_path': preview_path if os.path.exists(preview_path) else None,
-                            'metadata': metadata,
+                            'metadata': cached_metadata or basic_info,
                             'has_raw': raw_path is not None,
-                            'has_jpg': jpg_path is not None
+                            'has_jpg': jpg_path is not None,
+                            'thumbnail_exists': os.path.exists(thumbnail_path),
+                            'preview_exists': os.path.exists(preview_path),
+                            'metadata_exists': cached_metadata is not None
                         }
                         
                         images.append(image_info)
                         image_paths.append(display_path)
             
-            # 第二阶段：优先生成前两张缩略图（同步）
-            initial_thumbnails_count = 0
-            for i, image_path in enumerate(image_paths):
-                if initial_thumbnails_count >= 2:  # 只生成前两张
-                    break
-                
-                # 检查缩略图是否已存在
-                cache_dir = self.get_cache_dir(image_path)
-                file_hash = self.get_file_hash(image_path)
-                thumbnail_path = os.path.join(cache_dir, f"thumb_{file_hash}.jpg")
-                
-                if not os.path.exists(thumbnail_path):
-                    # 同步生成缩略图
-                    print(f"同步生成缩略图: {image_path}")
-                    thumbnail_path = self.generate_thumbnail(image_path)
-                    # 更新images中的thumbnail_path
-                    for img in images:
-                        if img['file_path'] == image_path:
-                            img['thumbnail_path'] = thumbnail_path
-                            initial_thumbnails_count += 1
-                            break
-            
-            # 第三阶段：将剩余的缩略图和所有预览图任务加入队列（异步）
+            # 异步处理阶段：将所有图片的处理任务加入队列，不阻塞返回
+            # 1. 首先添加所有元数据提取任务
             for image_path in image_paths:
-                # 检查并添加缩略图任务（如果不存在）
-                cache_dir = self.get_cache_dir(image_path)
-                file_hash = self.get_file_hash(image_path)
-                thumbnail_path = os.path.join(cache_dir, f"thumb_{file_hash}.jpg")
-                preview_path = os.path.join(cache_dir, f"preview_{file_hash}.jpg")
-                
-                if not os.path.exists(thumbnail_path):
-                    self.cache_queue.put({'type': 'thumbnail', 'file_path': image_path})
-                
-                if not os.path.exists(preview_path):
-                    self.cache_queue.put({'type': 'preview', 'file_path': image_path})
+                self.cache_queue.put({'type': 'metadata', 'file_path': image_path})
+            
+            # 2. 然后添加所有缩略图生成任务
+            for image_path in image_paths:
+                self.cache_queue.put({'type': 'thumbnail', 'file_path': image_path})
+            
+            # 3. 最后添加所有预览图生成任务
+            for image_path in image_paths:
+                self.cache_queue.put({'type': 'preview', 'file_path': image_path})
         except PermissionError:
             print(f"权限不足，无法访问目录: {directory}")
         except Exception as e:

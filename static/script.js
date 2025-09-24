@@ -492,8 +492,20 @@ async function loadImages() {
     }
 }
 
+// 存储需要定期检查的图片项
+let pendingImageItems = [];
+// 定期检查的定时器
+let imageUpdateInterval = null;
+
 function displayContent(subdirectories, images) {
     imageGrid.innerHTML = '';
+    
+    // 清除之前的定时器和待处理项目
+    if (imageUpdateInterval) {
+        clearInterval(imageUpdateInterval);
+        imageUpdateInterval = null;
+    }
+    pendingImageItems = [];
     
     // 显示子文件夹 - 过滤掉完全空的文件夹
     if (subdirectories && Array.isArray(subdirectories)) {
@@ -510,13 +522,95 @@ function displayContent(subdirectories, images) {
         images.forEach((image, index) => {
             const imageItem = createImageItem(image, index);
             imageGrid.appendChild(imageItem);
+            
+            // 如果缩略图不存在或元数据不完整，添加到待处理列表
+            if (!image.thumbnail_exists || !image.metadata_exists) {
+                pendingImageItems.push({
+                    image,
+                    index,
+                    element: imageItem,
+                    attempts: 0,
+                    maxAttempts: 30 // 最多尝试30次（约15秒）
+                });
+            }
         });
+        
+        // 如果有待处理项目，启动定期检查
+        if (pendingImageItems.length > 0) {
+            startImageUpdateInterval();
+        }
     }
     
     // 应用瀑布流布局
     setTimeout(() => {
         layoutWaterfall();
     }, 100);
+}
+
+function startImageUpdateInterval() {
+    // 每500毫秒检查一次
+    imageUpdateInterval = setInterval(() => {
+        updatePendingImages();
+    }, 500);
+}
+
+async function updatePendingImages() {
+    if (pendingImageItems.length === 0) {
+        // 没有待处理项目，清除定时器
+        if (imageUpdateInterval) {
+            clearInterval(imageUpdateInterval);
+            imageUpdateInterval = null;
+        }
+        return;
+    }
+    
+    // 处理有限数量的图片，避免一次性发送太多请求
+    const batchSize = 5;
+    const currentBatch = pendingImageItems.slice(0, batchSize);
+    
+    // 过滤掉尝试次数过多的项目
+    pendingImageItems = pendingImageItems.filter(item => item.attempts < item.maxAttempts);
+    
+    // 为每个图片项检查更新
+    const updatePromises = currentBatch.map(async (item) => {
+        try {
+            // 更新尝试次数
+            item.attempts++;
+            
+            // 检查缩略图是否可用
+            if (!item.image.thumbnail_exists) {
+                const thumbnailResponse = await fetch(`/api/image/thumbnail?file_path=${encodeURIComponent(item.image.file_path)}&_=${Date.now()}`);
+                if (thumbnailResponse.ok) {
+                    // 缩略图已生成，更新图片
+                    const imgElement = item.element.querySelector('.image-thumbnail');
+                    imgElement.src = `/api/image/thumbnail?file_path=${encodeURIComponent(item.image.file_path)}&_=${Date.now()}`;
+                    item.image.thumbnail_exists = true;
+                    
+                    // 重新应用瀑布流布局
+                    setTimeout(() => {
+                        layoutWaterfall();
+                    }, 100);
+                }
+            }
+            
+            // 检查元数据是否可用
+            if (!item.image.metadata_exists) {
+                const metadataResponse = await fetch(`/api/image/metadata?file_path=${encodeURIComponent(item.image.file_path)}`);
+                if (metadataResponse.ok) {
+                    const metadata = await metadataResponse.json();
+                    // 更新元数据
+                    item.image.metadata = metadata;
+                    item.image.metadata_exists = true;
+                    // 这里可以添加代码来更新UI上显示的元数据信息
+                }
+            }
+        } catch (error) {
+            console.error('更新图片信息失败:', error);
+        }
+    });
+    
+    // 等待所有更新请求完成
+    await Promise.all(updatePromises);
 }
 
 function displayImages(images) {
